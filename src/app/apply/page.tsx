@@ -23,7 +23,7 @@ import {
   Briefcase,
 } from "lucide-react";
 
-const AUTH_URL = process.env.NEXT_PUBLIC_AUTH_URL || "https://auth.peeap.com";
+const PEEAP_URL = process.env.NEXT_PUBLIC_PEEAP_URL || "https://my.peeap.com";
 const SHIPPING_URL = process.env.NEXT_PUBLIC_SHIPPING_URL || "https://peeap-shipping.vercel.app";
 
 function getAuthToken(): string | null {
@@ -107,14 +107,10 @@ function ApplyPageInner() {
       // Try exchanging token from URL
       const code = searchParams.get("token");
       if (code) {
-        fetch(`${AUTH_URL}/api/auth/exchange`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ code, client: "shipping" }),
-        })
+        fetch(`/api/auth/sso?token=${encodeURIComponent(code)}`)
           .then((res) => res.ok ? res.json() : Promise.reject())
           .then((data) => {
-            const accessToken = data.access_token || data.session_token;
+            const accessToken = data.token || code;
             localStorage.setItem("peeap_auth_token", accessToken);
             setUser({
               sub: data.user.id,
@@ -162,7 +158,7 @@ function ApplyPageInner() {
 
   function handleLogin() {
     const redirectUrl = `${SHIPPING_URL}/apply`;
-    window.location.href = `${AUTH_URL}/login?client=shipping&redirect=${encodeURIComponent(redirectUrl)}`;
+    window.location.href = `${PEEAP_URL}/login?client=shipping&redirect=${encodeURIComponent(redirectUrl)}`;
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -306,7 +302,7 @@ function ApplyPageInner() {
             <p className="text-xs text-gray-400 mt-4">
               Don&apos;t have an account?{" "}
               <a
-                href={`${AUTH_URL}/register?client=shipping&redirect=${encodeURIComponent(`${SHIPPING_URL}/apply`)}`}
+                href={`${PEEAP_URL}/register?client=shipping&redirect=${encodeURIComponent(`${SHIPPING_URL}/apply`)}`}
                 className="text-violet-600 hover:underline"
               >
                 Create one for free
