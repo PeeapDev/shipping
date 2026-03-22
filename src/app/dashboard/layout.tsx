@@ -8,6 +8,7 @@ import {
   PackageCheck,
   List,
   Users,
+  UserCog,
   Map,
   Settings,
   ChevronLeft,
@@ -22,6 +23,7 @@ const navItems = [
   { href: "/dashboard/jobs", label: "All Jobs", icon: List },
   { href: "/dashboard/drivers", label: "Drivers", icon: Users },
   { href: "/dashboard/zones", label: "Zones", icon: Map },
+  { href: "/dashboard/staff", label: "Staff", icon: UserCog },
   { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ];
 

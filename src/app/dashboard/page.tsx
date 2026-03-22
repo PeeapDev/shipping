@@ -42,147 +42,48 @@ export default function DashboardPage() {
 
   async function loadDashboard() {
     try {
-      // In production, these would be real API calls with auth tokens
-      // For now, show placeholder data
-      setStats({
-        active_deliveries: 12,
-        completed_today: 45,
-        revenue_today: 1250.0,
-        total_drivers: 28,
-        available_drivers: 15,
-      });
-
-      setRecentJobs([
-        {
-          id: "1",
-          job_number: "SHP-20260321-A1B2",
-          store_order_id: null,
-          transaction_id: null,
-          merchant_id: "m1",
-          merchant_name: "City Electronics",
-          customer_id: "c1",
-          customer_name: "Ibrahim Kamara",
-          customer_phone: "+23276123456",
-          driver_id: "d1",
-          pickup_address: "15 Siaka Stevens St, Freetown",
-          pickup_city: "Freetown",
-          pickup_lat: null,
-          pickup_lng: null,
-          pickup_instructions: null,
-          delivery_address: "42 Wilkinson Rd, Freetown",
-          delivery_city: "Freetown",
-          delivery_lat: null,
-          delivery_lng: null,
-          delivery_instructions: "Call on arrival",
-          preferred_date: null,
-          preferred_time_slot: null,
-          estimated_pickup_time: null,
-          estimated_delivery_time: null,
-          actual_pickup_time: null,
-          actual_delivery_time: null,
-          shipping_fee: 15.0,
-          driver_payout: 12.0,
-          platform_fee: 3.0,
-          status: "in_transit",
-          cancel_reason: null,
-          failure_reason: null,
-          package_description: "Samsung Galaxy A15",
-          package_weight_kg: 0.5,
-          package_size: "small",
-          requires_signature: false,
-          proof_of_delivery_url: null,
-          items: [],
-          metadata: {},
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        },
-        {
-          id: "2",
-          job_number: "SHP-20260321-C3D4",
-          store_order_id: null,
-          transaction_id: null,
-          merchant_id: "m2",
-          merchant_name: "Fresh Mart",
-          customer_id: "c2",
-          customer_name: "Aminata Sesay",
-          customer_phone: "+23278987654",
-          driver_id: null,
-          pickup_address: "8 Lumley Beach Rd, Freetown",
-          pickup_city: "Freetown",
-          pickup_lat: null,
-          pickup_lng: null,
-          pickup_instructions: null,
-          delivery_address: "22 Hill Station, Freetown",
-          delivery_city: "Freetown",
-          delivery_lat: null,
-          delivery_lng: null,
-          delivery_instructions: null,
-          preferred_date: null,
-          preferred_time_slot: "afternoon",
-          estimated_pickup_time: null,
-          estimated_delivery_time: null,
-          actual_pickup_time: null,
-          actual_delivery_time: null,
-          shipping_fee: 20.0,
-          driver_payout: 16.0,
-          platform_fee: 4.0,
-          status: "pending",
-          cancel_reason: null,
-          failure_reason: null,
-          package_description: "Grocery box",
-          package_weight_kg: 3.0,
-          package_size: "medium",
-          requires_signature: false,
-          proof_of_delivery_url: null,
-          items: [],
-          metadata: {},
-          created_at: new Date(Date.now() - 30 * 60000).toISOString(),
-          updated_at: new Date(Date.now() - 30 * 60000).toISOString(),
-        },
-        {
-          id: "3",
-          job_number: "SHP-20260321-E5F6",
-          store_order_id: null,
-          transaction_id: null,
-          merchant_id: "m1",
-          merchant_name: "City Electronics",
-          customer_id: "c3",
-          customer_name: "Mohamed Bangura",
-          customer_phone: "+23277555888",
-          driver_id: "d2",
-          pickup_address: "15 Siaka Stevens St, Freetown",
-          pickup_city: "Freetown",
-          pickup_lat: null,
-          pickup_lng: null,
-          pickup_instructions: null,
-          delivery_address: "3 Pademba Rd, Freetown",
-          delivery_city: "Freetown",
-          delivery_lat: null,
-          delivery_lng: null,
-          delivery_instructions: null,
-          preferred_date: null,
-          preferred_time_slot: null,
-          estimated_pickup_time: null,
-          estimated_delivery_time: null,
-          actual_pickup_time: new Date(Date.now() - 60 * 60000).toISOString(),
-          actual_delivery_time: new Date(Date.now() - 15 * 60000).toISOString(),
-          shipping_fee: 10.0,
-          driver_payout: 8.0,
-          platform_fee: 2.0,
-          status: "completed",
-          cancel_reason: null,
-          failure_reason: null,
-          package_description: "Phone case + charger",
-          package_weight_kg: 0.3,
-          package_size: "small",
-          requires_signature: false,
-          proof_of_delivery_url: null,
-          items: [],
-          metadata: {},
-          created_at: new Date(Date.now() - 120 * 60000).toISOString(),
-          updated_at: new Date(Date.now() - 15 * 60000).toISOString(),
-        },
+      const [deliveriesRes, driversRes] = await Promise.all([
+        fetch("/api/deliveries?limit=5"),
+        fetch("/api/drivers"),
       ]);
+
+      if (deliveriesRes.ok) {
+        const dData = await deliveriesRes.json();
+        setRecentJobs(dData.deliveries || []);
+        const active = (dData.deliveries || []).filter((j: DeliveryJob) =>
+          ["pending", "assigned", "picked_up", "in_transit"].includes(j.status)
+        ).length;
+        const completedToday = (dData.deliveries || []).filter(
+          (j: DeliveryJob) =>
+            j.status === "completed" &&
+            new Date(j.updated_at).toDateString() === new Date().toDateString()
+        ).length;
+        const revenueToday = (dData.deliveries || [])
+          .filter(
+            (j: DeliveryJob) =>
+              j.status === "completed" &&
+              new Date(j.updated_at).toDateString() === new Date().toDateString()
+          )
+          .reduce((sum: number, j: DeliveryJob) => sum + (j.platform_fee || 0), 0);
+
+        setStats((prev) => ({
+          ...prev,
+          active_deliveries: active,
+          completed_today: completedToday,
+          revenue_today: revenueToday,
+        }));
+      }
+
+      if (driversRes.ok) {
+        const drData = await driversRes.json();
+        setStats((prev) => ({
+          ...prev,
+          total_drivers: drData.total || 0,
+          available_drivers: drData.drivers?.filter((d: any) => d.is_available).length || 0,
+        }));
+      }
+    } catch (err) {
+      console.error("Failed to load dashboard:", err);
     } finally {
       setLoading(false);
     }

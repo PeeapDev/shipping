@@ -48,80 +48,18 @@ export default function AllJobsPage() {
   async function loadJobs() {
     setLoading(true);
     try {
-      // Placeholder — in production, call API
-      const allJobs: DeliveryJob[] = [
-        makeJob("1", "SHP-20260321-A1B2", "City Electronics", "Ibrahim Kamara", "in_transit", 15, "small", -45),
-        makeJob("2", "SHP-20260321-C3D4", "Fresh Mart", "Aminata Sesay", "pending", 20, "medium", -30),
-        makeJob("3", "SHP-20260321-E5F6", "City Electronics", "Mohamed Bangura", "completed", 10, "small", -120),
-        makeJob("4", "SHP-20260320-G7H8", "TechHub SL", "Fatmata Koroma", "delivered", 25, "large", -240),
-        makeJob("5", "SHP-20260320-I9J0", "Fashion House", "Abu Kamara", "cancelled", 18, "medium", -360),
-        makeJob("6", "SHP-20260319-K1L2", "Pharmacy Plus", "Isatu Bah", "completed", 12, "small", -1440),
-      ];
-
-      const filtered =
-        statusFilter === "all"
-          ? allJobs
-          : allJobs.filter((j) => j.status === statusFilter);
-
-      setJobs(filtered);
+      const params = new URLSearchParams({ limit: "100" });
+      if (statusFilter !== "all") params.set("status", statusFilter);
+      const res = await fetch(`/api/deliveries?${params}`);
+      if (res.ok) {
+        const data = await res.json();
+        setJobs(data.deliveries || []);
+      }
+    } catch (err) {
+      console.error("Failed to load jobs:", err);
     } finally {
       setLoading(false);
     }
-  }
-
-  function makeJob(
-    id: string,
-    jobNumber: string,
-    merchant: string,
-    customer: string,
-    status: string,
-    fee: number,
-    size: string,
-    minutesAgo: number
-  ): DeliveryJob {
-    return {
-      id,
-      job_number: jobNumber,
-      store_order_id: null,
-      transaction_id: null,
-      merchant_id: "m1",
-      merchant_name: merchant,
-      customer_id: "c1",
-      customer_name: customer,
-      customer_phone: "+23276000000",
-      driver_id: status !== "pending" ? "d1" : null,
-      pickup_address: "Freetown Central",
-      pickup_city: "Freetown",
-      pickup_lat: null,
-      pickup_lng: null,
-      pickup_instructions: null,
-      delivery_address: "Customer Address, Freetown",
-      delivery_city: "Freetown",
-      delivery_lat: null,
-      delivery_lng: null,
-      delivery_instructions: null,
-      preferred_date: null,
-      preferred_time_slot: null,
-      estimated_pickup_time: null,
-      estimated_delivery_time: null,
-      actual_pickup_time: null,
-      actual_delivery_time: null,
-      shipping_fee: fee,
-      driver_payout: fee * 0.8,
-      platform_fee: fee * 0.2,
-      status: status as any,
-      cancel_reason: status === "cancelled" ? "Customer request" : null,
-      failure_reason: null,
-      package_description: "Package",
-      package_weight_kg: 1,
-      package_size: size as any,
-      requires_signature: false,
-      proof_of_delivery_url: null,
-      items: [],
-      metadata: {},
-      created_at: new Date(Date.now() + minutesAgo * 60000).toISOString(),
-      updated_at: new Date(Date.now() + minutesAgo * 60000).toISOString(),
-    };
   }
 
   const filteredJobs = searchQuery

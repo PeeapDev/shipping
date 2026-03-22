@@ -15,81 +15,13 @@ export default function ZonesPage() {
   async function loadZones() {
     setLoading(true);
     try {
-      // Placeholder data
-      setZones([
-        {
-          id: "z1",
-          name: "Freetown Central",
-          city: "Freetown",
-          base_fee: 10,
-          per_km_fee: 2,
-          min_fee: 5,
-          max_fee: 50,
-          estimated_time_minutes: 30,
-          is_active: true,
-          created_at: "2026-01-01T00:00:00Z",
-        },
-        {
-          id: "z2",
-          name: "Freetown West",
-          city: "Freetown",
-          base_fee: 12,
-          per_km_fee: 2.5,
-          min_fee: 8,
-          max_fee: 60,
-          estimated_time_minutes: 45,
-          is_active: true,
-          created_at: "2026-01-01T00:00:00Z",
-        },
-        {
-          id: "z3",
-          name: "Freetown East",
-          city: "Freetown",
-          base_fee: 15,
-          per_km_fee: 3,
-          min_fee: 10,
-          max_fee: 75,
-          estimated_time_minutes: 50,
-          is_active: true,
-          created_at: "2026-01-01T00:00:00Z",
-        },
-        {
-          id: "z4",
-          name: "Bo Central",
-          city: "Bo",
-          base_fee: 8,
-          per_km_fee: 1.5,
-          min_fee: 5,
-          max_fee: 40,
-          estimated_time_minutes: 25,
-          is_active: true,
-          created_at: "2026-01-01T00:00:00Z",
-        },
-        {
-          id: "z5",
-          name: "Kenema Central",
-          city: "Kenema",
-          base_fee: 8,
-          per_km_fee: 1.5,
-          min_fee: 5,
-          max_fee: 40,
-          estimated_time_minutes: 25,
-          is_active: true,
-          created_at: "2026-01-01T00:00:00Z",
-        },
-        {
-          id: "z6",
-          name: "Makeni Central",
-          city: "Makeni",
-          base_fee: 8,
-          per_km_fee: 1.5,
-          min_fee: 5,
-          max_fee: 40,
-          estimated_time_minutes: 30,
-          is_active: true,
-          created_at: "2026-01-01T00:00:00Z",
-        },
-      ]);
+      const res = await fetch("/api/zones");
+      if (res.ok) {
+        const data = await res.json();
+        setZones(data.zones || []);
+      }
+    } catch (err) {
+      console.error("Failed to load zones:", err);
     } finally {
       setLoading(false);
     }

@@ -33,118 +33,38 @@ export default function ActiveDeliveriesPage() {
   async function loadActiveDeliveries() {
     setLoading(true);
     try {
-      // Placeholder data — in production, fetch from API with auth
-      setDeliveries([
-        {
-          id: "1",
-          job_number: "SHP-20260321-A1B2",
-          store_order_id: null,
-          transaction_id: null,
-          merchant_id: "m1",
-          merchant_name: "City Electronics",
-          customer_id: "c1",
-          customer_name: "Ibrahim Kamara",
-          customer_phone: "+23276123456",
-          driver_id: "d1",
-          pickup_address: "15 Siaka Stevens St, Freetown",
-          pickup_city: "Freetown",
-          pickup_lat: null,
-          pickup_lng: null,
-          pickup_instructions: "Ask for Mohamed at the counter",
-          delivery_address: "42 Wilkinson Rd, Freetown",
-          delivery_city: "Freetown",
-          delivery_lat: null,
-          delivery_lng: null,
-          delivery_instructions: "Call on arrival",
-          preferred_date: null,
-          preferred_time_slot: null,
-          estimated_pickup_time: null,
-          estimated_delivery_time: null,
-          actual_pickup_time: new Date(Date.now() - 20 * 60000).toISOString(),
-          actual_delivery_time: null,
-          shipping_fee: 15.0,
-          driver_payout: 12.0,
-          platform_fee: 3.0,
-          status: "in_transit",
-          cancel_reason: null,
-          failure_reason: null,
-          package_description: "Samsung Galaxy A15",
-          package_weight_kg: 0.5,
-          package_size: "small",
-          requires_signature: false,
-          proof_of_delivery_url: null,
-          items: [],
-          metadata: {},
-          created_at: new Date(Date.now() - 45 * 60000).toISOString(),
-          updated_at: new Date(Date.now() - 5 * 60000).toISOString(),
-          driver: {
-            id: "d1",
-            user_id: "u1",
-            name: "Alhaji Driver",
-            phone: "+23276999888",
-            email: null,
-            vehicle_type: "motorcycle",
-            vehicle_plate: "AGA-1234",
-            profile_picture: null,
-            city: "Freetown",
-            is_active: true,
-            is_available: false,
-            current_lat: null,
-            current_lng: null,
-            total_deliveries: 234,
-            total_earnings: 5400,
-            average_rating: 4.7,
-            total_ratings: 180,
-            created_at: "",
-            updated_at: "",
-          },
-        },
-        {
-          id: "2",
-          job_number: "SHP-20260321-C3D4",
-          store_order_id: null,
-          transaction_id: null,
-          merchant_id: "m2",
-          merchant_name: "Fresh Mart",
-          customer_id: "c2",
-          customer_name: "Aminata Sesay",
-          customer_phone: "+23278987654",
-          driver_id: null,
-          pickup_address: "8 Lumley Beach Rd, Freetown",
-          pickup_city: "Freetown",
-          pickup_lat: null,
-          pickup_lng: null,
-          pickup_instructions: null,
-          delivery_address: "22 Hill Station, Freetown",
-          delivery_city: "Freetown",
-          delivery_lat: null,
-          delivery_lng: null,
-          delivery_instructions: null,
-          preferred_date: null,
-          preferred_time_slot: "afternoon",
-          estimated_pickup_time: null,
-          estimated_delivery_time: null,
-          actual_pickup_time: null,
-          actual_delivery_time: null,
-          shipping_fee: 20.0,
-          driver_payout: 16.0,
-          platform_fee: 4.0,
-          status: "pending",
-          cancel_reason: null,
-          failure_reason: null,
-          package_description: "Grocery box",
-          package_weight_kg: 3.0,
-          package_size: "medium",
-          requires_signature: false,
-          proof_of_delivery_url: null,
-          items: [],
-          metadata: {},
-          created_at: new Date(Date.now() - 30 * 60000).toISOString(),
-          updated_at: new Date(Date.now() - 30 * 60000).toISOString(),
-        },
-      ]);
+      const res = await fetch("/api/deliveries?limit=50");
+      if (res.ok) {
+        const data = await res.json();
+        const active = (data.deliveries || []).filter((j: DeliveryJob) =>
+          ["pending", "assigned", "picked_up", "in_transit"].includes(j.status)
+        );
+        setDeliveries(active);
+      }
+    } catch (err) {
+      console.error("Failed to load active deliveries:", err);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function updateStatus(jobId: string, newStatus: string, driverId?: string) {
+    try {
+      const body: any = { status: newStatus };
+      if (driverId) body.driver_id = driverId;
+      const res = await fetch(`/api/deliveries/${jobId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        loadActiveDeliveries();
+      } else {
+        const err = await res.json();
+        alert(err.error || "Failed to update status");
+      }
+    } catch {
+      alert("Failed to update status");
     }
   }
 
@@ -303,6 +223,53 @@ export default function ActiveDeliveriesPage() {
                 <div className="mt-3 flex items-center gap-2 text-sm text-gray-500">
                   <Phone className="h-3.5 w-3.5" />
                   {job.customer_name} &mdash; {job.customer_phone}
+                </div>
+
+                {/* Status Actions */}
+                <div className="mt-3 pt-3 border-t border-gray-100 flex flex-wrap gap-2">
+                  {job.status === "pending" && (
+                    <button
+                      onClick={() => updateStatus(job.id, "assigned")}
+                      className="text-xs bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700"
+                    >
+                      Assign Driver
+                    </button>
+                  )}
+                  {job.status === "assigned" && (
+                    <button
+                      onClick={() => updateStatus(job.id, "picked_up")}
+                      className="text-xs bg-indigo-600 text-white px-3 py-1.5 rounded-lg hover:bg-indigo-700"
+                    >
+                      Mark Picked Up
+                    </button>
+                  )}
+                  {job.status === "picked_up" && (
+                    <button
+                      onClick={() => updateStatus(job.id, "in_transit")}
+                      className="text-xs bg-purple-600 text-white px-3 py-1.5 rounded-lg hover:bg-purple-700"
+                    >
+                      Mark In Transit
+                    </button>
+                  )}
+                  {job.status === "in_transit" && (
+                    <button
+                      onClick={() => updateStatus(job.id, "delivered")}
+                      className="text-xs bg-green-600 text-white px-3 py-1.5 rounded-lg hover:bg-green-700"
+                    >
+                      Mark Delivered
+                    </button>
+                  )}
+                  {!["delivered", "completed", "cancelled", "failed"].includes(job.status) && (
+                    <button
+                      onClick={() => {
+                        const reason = prompt("Cancel reason:");
+                        if (reason) updateStatus(job.id, "cancelled");
+                      }}
+                      className="text-xs bg-white text-red-600 border border-red-200 px-3 py-1.5 rounded-lg hover:bg-red-50"
+                    >
+                      Cancel
+                    </button>
+                  )}
                 </div>
               </div>
             );

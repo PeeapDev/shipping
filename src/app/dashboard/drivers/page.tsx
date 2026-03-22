@@ -34,96 +34,27 @@ export default function DriversPage() {
   async function loadDrivers() {
     setLoading(true);
     try {
-      // Placeholder data
-      setDrivers([
-        {
-          id: "d1",
-          user_id: "u1",
-          name: "Alhaji Conteh",
-          phone: "+23276999888",
-          email: "alhaji@email.com",
-          vehicle_type: "motorcycle",
-          vehicle_plate: "AGA-1234",
-          profile_picture: null,
-          city: "Freetown",
-          is_active: true,
-          is_available: false,
-          current_lat: null,
-          current_lng: null,
-          total_deliveries: 234,
-          total_earnings: 5400,
-          average_rating: 4.7,
-          total_ratings: 180,
-          created_at: "2026-01-15T10:00:00Z",
-          updated_at: "2026-03-21T08:00:00Z",
-        },
-        {
-          id: "d2",
-          user_id: "u2",
-          name: "Mariatu Kamara",
-          phone: "+23278555444",
-          email: null,
-          vehicle_type: "bicycle",
-          vehicle_plate: null,
-          profile_picture: null,
-          city: "Freetown",
-          is_active: true,
-          is_available: true,
-          current_lat: null,
-          current_lng: null,
-          total_deliveries: 89,
-          total_earnings: 1800,
-          average_rating: 4.9,
-          total_ratings: 75,
-          created_at: "2026-02-01T10:00:00Z",
-          updated_at: "2026-03-21T09:00:00Z",
-        },
-        {
-          id: "d3",
-          user_id: "u3",
-          name: "Samuel Johnson",
-          phone: "+23277333222",
-          email: "sam.j@email.com",
-          vehicle_type: "car",
-          vehicle_plate: "ABC-5678",
-          profile_picture: null,
-          city: "Bo",
-          is_active: true,
-          is_available: true,
-          current_lat: null,
-          current_lng: null,
-          total_deliveries: 156,
-          total_earnings: 3900,
-          average_rating: 4.5,
-          total_ratings: 120,
-          created_at: "2026-01-20T10:00:00Z",
-          updated_at: "2026-03-20T16:00:00Z",
-        },
-        {
-          id: "d4",
-          user_id: "u4",
-          name: "Fatmata Bangura",
-          phone: "+23276111222",
-          email: null,
-          vehicle_type: "foot",
-          vehicle_plate: null,
-          profile_picture: null,
-          city: "Freetown",
-          is_active: true,
-          is_available: true,
-          current_lat: null,
-          current_lng: null,
-          total_deliveries: 45,
-          total_earnings: 800,
-          average_rating: 5.0,
-          total_ratings: 40,
-          created_at: "2026-03-01T10:00:00Z",
-          updated_at: "2026-03-21T07:00:00Z",
-        },
-      ]);
+      const res = await fetch("/api/drivers");
+      if (res.ok) {
+        const data = await res.json();
+        setDrivers(data.drivers || []);
+      }
+    } catch (err) {
+      console.error("Failed to load drivers:", err);
     } finally {
       setLoading(false);
     }
+  }
+
+  async function toggleAvailability(driverId: string, available: boolean) {
+    try {
+      const res = await fetch("/api/drivers", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ is_available: !available }),
+      });
+      if (res.ok) loadDrivers();
+    } catch {}
   }
 
   const filteredDrivers = searchQuery
@@ -243,8 +174,8 @@ export default function DriversPage() {
                 </div>
               </div>
 
-              {/* Status badge */}
-              <div className="mt-4 pt-3 border-t border-gray-100">
+              {/* Status badge + toggle */}
+              <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-between">
                 <span
                   className={`text-xs font-medium px-2 py-1 rounded-full ${
                     driver.is_available
@@ -254,6 +185,12 @@ export default function DriversPage() {
                 >
                   {driver.is_available ? "Available" : "Busy"}
                 </span>
+                <button
+                  onClick={() => toggleAvailability(driver.id, driver.is_available)}
+                  className="text-xs text-violet-600 hover:text-violet-700 font-medium"
+                >
+                  Toggle
+                </button>
               </div>
             </div>
           );
