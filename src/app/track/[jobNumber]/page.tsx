@@ -121,13 +121,19 @@ async function fetchTracking(
 
     if (error || !delivery) return null;
 
+    // Supabase returns joined relation as array; normalize to single object
+    const normalized = {
+      ...delivery,
+      driver: Array.isArray(delivery.driver) ? delivery.driver[0] || null : delivery.driver,
+    };
+
     const { data: updates } = await sb
       .from("tracking_updates")
       .select("*")
       .eq("job_id", delivery.id)
       .order("created_at", { ascending: true });
 
-    return { delivery, tracking: updates || [] } as TrackingData;
+    return { delivery: normalized, tracking: updates || [] } as unknown as TrackingData;
   } catch {
     return null;
   }
