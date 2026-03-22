@@ -103,16 +103,31 @@ const statusOrder = [
 async function fetchTracking(
   jobNumber: string
 ): Promise<TrackingData | null> {
-  const baseUrl =
-    process.env.NEXT_PUBLIC_SHIPPING_URL ||
-    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3500");
-
   try {
-    const res = await fetch(`${baseUrl}/api/deliveries/${jobNumber}/track`, {
-      cache: "no-store",
-    });
-    if (!res.ok) return null;
-    return res.json();
+    // Server component: fetch directly from Supabase instead of self-calling API
+    const { createClient } = await import("@supabase/supabase-js");
+    const supabaseUrl = process.env.SUPABASE_URL!;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+    const sb = createClient(supabaseUrl, supabaseKey, { auth: { persistSession: false } });
+
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(jobNumber);
+    const column = isUUID ? "id" : "job_number";
+
+    const { data: delivery, error } = await sb
+      .from("delivery_jobs")
+      .select("id, job_number, status, customer_name, pickup_city, delivery_city, delivery_address, package_size, package_description, estimated_delivery_time, actual_delivery_time, created_at, driver:drivers(id, name, phone, vehicle_type, profile_picture)")
+      .eq(column, jobNumber)
+      .single();
+
+    if (error || !delivery) return null;
+
+    const { data: updates } = await sb
+      .from("tracking_updates")
+      .select("*")
+      .eq("job_id", delivery.id)
+      .order("created_at", { ascending: true });
+
+    return { delivery, tracking: updates || [] } as TrackingData;
   } catch {
     return null;
   }
