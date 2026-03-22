@@ -66,7 +66,7 @@ export default function LandingPage() {
                 <ChevronRight className="ml-2 h-5 w-5" />
               </Link>
               <Link
-                href="#become-driver"
+                href="/apply"
                 className="inline-flex items-center justify-center border-2 border-white text-white px-6 py-3 rounded-lg font-semibold hover:bg-white/10 transition-colors"
               >
                 Become a Driver
@@ -373,7 +373,7 @@ export default function LandingPage() {
                 </li>
                 <li>
                   <a
-                    href="#become-driver"
+                    href="/apply"
                     className="hover:text-white transition-colors"
                   >
                     Become a Driver
