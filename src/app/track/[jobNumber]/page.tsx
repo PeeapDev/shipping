@@ -104,7 +104,8 @@ async function fetchTracking(
   jobNumber: string
 ): Promise<TrackingData | null> {
   const baseUrl =
-    process.env.NEXT_PUBLIC_SHIPPING_URL || "http://localhost:3500";
+    process.env.NEXT_PUBLIC_SHIPPING_URL ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3500");
 
   try {
     const res = await fetch(`${baseUrl}/api/deliveries/${jobNumber}/track`, {
