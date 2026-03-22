@@ -30,10 +30,10 @@ export async function GET(request: NextRequest) {
     if (error) throw error;
 
     return NextResponse.json({ zones: data || [] }, { headers });
-  } catch (err) {
+  } catch (err: any) {
     console.error("Error fetching zones:", err);
     return NextResponse.json(
-      { error: "Failed to fetch zones" },
+      { error: "Failed to fetch zones", detail: err?.message || String(err) },
       { status: 500, headers }
     );
   }
