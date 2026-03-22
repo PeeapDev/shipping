@@ -1,11 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Truck, Search, Package } from "lucide-react";
 import Link from "next/link";
 
 export default function TrackSearchPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><Truck className="w-8 h-8 animate-pulse text-gray-400" /></div>}>
+      <TrackSearchInner />
+    </Suspense>
+  );
+}
+
+function TrackSearchInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const initialQuery = searchParams.get("q") || "";
