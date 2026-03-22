@@ -3,6 +3,8 @@ import { authenticateRequest } from "@/lib/auth";
 import { corsHeaders, handleCORS } from "@/lib/cors";
 import { supabase } from "@/lib/supabase";
 
+const PEEAP_API_URL = process.env.API_BASE_URL || "https://api.peeap.com";
+
 export async function OPTIONS(request: NextRequest) {
   return handleCORS(request) || NextResponse.json({});
 }
@@ -21,7 +23,6 @@ export async function GET(request: NextRequest) {
     const { data, error } = await supabase
       .from("shipping_staff")
       .select("*")
-      .eq("is_active", true)
       .order("created_at", { ascending: false });
 
     if (error) throw error;
@@ -36,7 +37,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST /api/staff — Add staff member (authenticated)
+// POST /api/staff — Add a Peeap user as staff member
 export async function POST(request: NextRequest) {
   const origin = request.headers.get("origin");
   const headers = corsHeaders(origin);
@@ -48,11 +49,11 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { name, email, phone, role } = body;
+    const { user_id, role } = body;
 
-    if (!name || !role) {
+    if (!user_id || !role) {
       return NextResponse.json(
-        { error: "Name and role are required" },
+        { error: "user_id and role are required" },
         { status: 400, headers }
       );
     }
@@ -65,13 +66,68 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Check if this user is already staff
+    const { data: existing } = await supabase
+      .from("shipping_staff")
+      .select("id, is_active")
+      .eq("user_id", user_id)
+      .limit(1);
+
+    if (existing && existing.length > 0) {
+      if (existing[0].is_active) {
+        return NextResponse.json(
+          { error: "This user is already a staff member" },
+          { status: 409, headers }
+        );
+      }
+      // Reactivate if previously deactivated
+      const { data: reactivated, error: reactivateError } = await supabase
+        .from("shipping_staff")
+        .update({ is_active: true, role, updated_at: new Date().toISOString() })
+        .eq("id", existing[0].id)
+        .select()
+        .single();
+
+      if (reactivateError) throw reactivateError;
+      return NextResponse.json({ staff: reactivated }, { status: 200, headers });
+    }
+
+    // Fetch the user's profile from Peeap API to store name/email/phone
+    let name = "Unknown User";
+    let email: string | null = null;
+    let phone: string | null = null;
+
+    try {
+      const profileRes = await fetch(
+        `${PEEAP_API_URL}/api/users/search?q=${encodeURIComponent(user_id)}&limit=1`
+      );
+      if (profileRes.ok) {
+        const profileData = await profileRes.json();
+        const users = profileData.users || [];
+        const user = users.find((u: any) => u.id === user_id);
+        if (user) {
+          name = [user.first_name, user.last_name].filter(Boolean).join(" ") || user.email || "Unknown User";
+          email = user.email || null;
+          phone = user.phone || null;
+        }
+      }
+    } catch (profileErr) {
+      console.error("[StaffAdd] Failed to fetch user profile:", profileErr);
+      // Continue with the info from the request body as fallback
+    }
+
+    // Also accept name/email/phone from frontend as fallback (from search results)
+    const finalName = body.name || name;
+    const finalEmail = body.email || email;
+    const finalPhone = body.phone || phone;
+
     const { data, error } = await supabase
       .from("shipping_staff")
       .insert({
-        user_id: auth.sub,
-        name,
-        email: email || null,
-        phone: phone || null,
+        user_id,
+        name: finalName,
+        email: finalEmail,
+        phone: finalPhone,
         role,
       })
       .select()
