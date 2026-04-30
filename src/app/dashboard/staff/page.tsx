@@ -42,14 +42,9 @@ const roleColors: Record<string, string> = {
 };
 
 function getAuthToken(): string | null {
-  if (typeof document !== "undefined") {
-    const match = document.cookie.match(/peeap_token=([^;]+)/);
-    if (match) return match[1];
-  }
-  if (typeof localStorage !== "undefined") {
-    return localStorage.getItem("peeap_auth_token");
-  }
-  return null;
+  if (typeof document === "undefined") return null;
+  const match = document.cookie.match(/(?:^|; )peeap_shipping_token=([^;]*)/);
+  return match ? decodeURIComponent(match[1]) : null;
 }
 
 function authHeaders(): Record<string, string> {

@@ -1,8 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
-import { authenticateRequest } from "@/lib/auth";
+import { createClient } from "@supabase/supabase-js";
+import { authenticateShippingRequest } from "@/lib/shipping-auth";
 import { corsHeaders, handleCORS } from "@/lib/cors";
 
-const PEEAP_API_URL = process.env.API_BASE_URL || "https://api.peeap.com";
+// Main Peeap Supabase for user lookup
+const MAIN_SUPABASE_URL =
+  process.env.MAIN_SUPABASE_URL || "https://akiecgwcxadcpqlvntmf.supabase.co";
+const MAIN_SUPABASE_KEY =
+  process.env.MAIN_SUPABASE_SERVICE_KEY ||
+  process.env.SUPABASE_SERVICE_ROLE_KEY ||
+  "";
+
+function getMainSupabase() {
+  return createClient(MAIN_SUPABASE_URL, MAIN_SUPABASE_KEY, {
+    auth: { persistSession: false },
+  });
+}
 
 export async function OPTIONS(request: NextRequest) {
   return handleCORS(request) || NextResponse.json({});
@@ -13,9 +26,13 @@ export async function GET(request: NextRequest) {
   const origin = request.headers.get("origin");
   const headers = corsHeaders(origin);
 
-  const auth = await authenticateRequest(request);
+  // Accept shipping tokens
+  const auth = authenticateShippingRequest(request);
   if (!auth) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers });
+    return NextResponse.json(
+      { error: "Unauthorized" },
+      { status: 401, headers }
+    );
   }
 
   try {
@@ -29,36 +46,43 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Call the main Peeap API to search users
-    const res = await fetch(
-      `${PEEAP_API_URL}/api/users/search?q=${encodeURIComponent(q.trim())}&limit=10`
-    );
+    const mainDb = getMainSupabase();
+    const query = q.trim().toLowerCase();
 
-    if (!res.ok) {
-      console.error("[StaffSearch] Peeap API error:", res.status);
+    // Search users by email, phone, or name in main Peeap DB
+    const { data: users, error } = await mainDb
+      .from("users")
+      .select(
+        "id, email, phone, first_name, last_name, profile_picture"
+      )
+      .or(
+        `email.ilike.%${query}%,phone.ilike.%${query}%,first_name.ilike.%${query}%,last_name.ilike.%${query}%`
+      )
+      .limit(10);
+
+    if (error) {
+      console.error("[StaffSearch] DB error:", error);
       return NextResponse.json(
         { error: "Failed to search users" },
-        { status: 502, headers }
+        { status: 500, headers }
       );
     }
 
-    const data = await res.json();
-
-    // Format results consistently
-    const users = (data.users || []).map((u: any) => ({
+    // Format results
+    const formatted = (users || []).map((u: any) => ({
       id: u.id,
-      firstName: u.first_name || u.firstName || "",
-      lastName: u.last_name || u.lastName || "",
+      firstName: u.first_name || "",
+      lastName: u.last_name || "",
       fullName:
-        [u.first_name || u.firstName, u.last_name || u.lastName]
-          .filter(Boolean)
-          .join(" ") || u.email || "Unknown",
+        [u.first_name, u.last_name].filter(Boolean).join(" ") ||
+        u.email ||
+        "Unknown",
       email: u.email || null,
       phone: u.phone || null,
-      avatarUrl: u.avatar_url || u.profile_picture || u.avatarUrl || null,
+      avatarUrl: u.profile_picture || null,
     }));
 
-    return NextResponse.json({ users }, { headers });
+    return NextResponse.json({ users: formatted }, { headers });
   } catch (err) {
     console.error("[StaffSearch] Error:", err);
     return NextResponse.json(

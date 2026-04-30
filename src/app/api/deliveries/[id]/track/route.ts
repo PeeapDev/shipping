@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateRequest } from "@/lib/auth";
+import { authenticateShippingRequest } from "@/lib/shipping-auth";
 import { corsHeaders, handleCORS } from "@/lib/cors";
 import { supabase } from "@/lib/supabase";
 import { addTrackingUpdateSchema } from "@/lib/validation";
@@ -31,7 +32,7 @@ export async function GET(
       const { data, error } = await supabase
         .from("delivery_jobs")
         .select(
-          "id, job_number, status, customer_name, pickup_city, delivery_city, delivery_address, package_size, package_description, estimated_delivery_time, actual_delivery_time, created_at, driver:drivers(id, name, phone, vehicle_type, profile_picture)"
+          "id, job_number, status, customer_name, pickup_city, delivery_city, delivery_address, package_size, package_description, estimated_delivery_time, actual_delivery_time, created_at, estimated_delivery_date, driver:drivers!delivery_jobs_driver_id_fkey(id, name, phone, vehicle_type, profile_picture)"
         )
         .eq("id", identifier)
         .single();
@@ -42,7 +43,7 @@ export async function GET(
       const { data, error } = await supabase
         .from("delivery_jobs")
         .select(
-          "id, job_number, status, customer_name, pickup_city, delivery_city, delivery_address, package_size, package_description, estimated_delivery_time, actual_delivery_time, created_at, driver:drivers(id, name, phone, vehicle_type, profile_picture)"
+          "id, job_number, status, customer_name, pickup_city, delivery_city, delivery_address, package_size, package_description, estimated_delivery_time, actual_delivery_time, created_at, estimated_delivery_date, driver:drivers!delivery_jobs_driver_id_fkey(id, name, phone, vehicle_type, profile_picture)"
         )
         .eq("job_number", identifier)
         .single();
@@ -89,7 +90,7 @@ export async function POST(
   const origin = request.headers.get("origin");
   const headers = corsHeaders(origin);
 
-  const auth = await authenticateRequest(request);
+  const auth = authenticateShippingRequest(request) || await authenticateRequest(request);
   if (!auth) {
     return NextResponse.json(
       { error: "Unauthorized" },

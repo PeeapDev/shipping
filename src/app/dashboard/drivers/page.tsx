@@ -106,9 +106,10 @@ export default function DriversPage() {
         {filteredDrivers.map((driver) => {
           const VehicleIcon = vehicleIcons[driver.vehicle_type] || Truck;
           return (
-            <div
+            <a
+              href={`/dashboard/drivers/${driver.id}`}
               key={driver.id}
-              className="bg-white rounded-xl border border-gray-200 p-5"
+              className="bg-white rounded-xl border border-gray-200 p-5 block hover:border-violet-300 transition-colors cursor-pointer"
             >
               <div className="flex items-start gap-3 mb-4">
                 <div className="w-12 h-12 bg-violet-100 rounded-full flex items-center justify-center flex-shrink-0">
@@ -192,7 +193,7 @@ export default function DriversPage() {
                   Toggle
                 </button>
               </div>
-            </div>
+            </a>
           );
         })}
       </div>

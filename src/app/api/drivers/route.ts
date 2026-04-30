@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateRequest } from "@/lib/auth";
+import { authenticateShippingRequest } from "@/lib/shipping-auth";
 import { corsHeaders, handleCORS } from "@/lib/cors";
 import { supabase } from "@/lib/supabase";
 import { registerDriverSchema, updateDriverSchema } from "@/lib/validation";
@@ -13,7 +14,7 @@ export async function GET(request: NextRequest) {
   const origin = request.headers.get("origin");
   const headers = corsHeaders(origin);
 
-  const auth = await authenticateRequest(request);
+  const auth = authenticateShippingRequest(request) || await authenticateRequest(request);
 
   try {
     const { searchParams } = new URL(request.url);

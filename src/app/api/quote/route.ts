@@ -7,7 +7,59 @@ export async function OPTIONS(request: NextRequest) {
   return handleCORS(request) || NextResponse.json({});
 }
 
-// POST /api/quote — Get shipping quote
+/**
+ * Haversine distance in km between two lat/lng points.
+ */
+function haversineKm(
+  lat1: number, lng1: number,
+  lat2: number, lng2: number
+): number {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) *
+    Math.cos((lat2 * Math.PI) / 180) *
+    Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+/**
+ * Known city coordinates for Sierra Leone (fallback when lat/lng not provided).
+ * Extend this as new cities are added.
+ */
+const CITY_COORDS: Record<string, { lat: number; lng: number }> = {
+  freetown: { lat: 8.484, lng: -13.2299 },
+  bo: { lat: 7.9647, lng: -11.7383 },
+  kenema: { lat: 7.8767, lng: -11.1875 },
+  makeni: { lat: 8.8833, lng: -12.05 },
+  koidu: { lat: 8.6436, lng: -10.9717 },
+  waterloo: { lat: 8.3389, lng: -13.0714 },
+  lunsar: { lat: 8.6833, lng: -12.5333 },
+  portloko: { lat: 8.7667, lng: -12.7833 },
+  kabala: { lat: 9.5833, lng: -11.55 },
+  magburaka: { lat: 8.7167, lng: -11.95 },
+  moyamba: { lat: 8.1592, lng: -12.4314 },
+  kambia: { lat: 9.1167, lng: -12.9167 },
+  // West/East ends of Freetown (for intra-city distance)
+  "east freetown": { lat: 8.47, lng: -13.19 },
+  "west freetown": { lat: 8.49, lng: -13.28 },
+  "central freetown": { lat: 8.484, lng: -13.2299 },
+};
+
+function getCityCoords(city: string): { lat: number; lng: number } | null {
+  const normalized = city.toLowerCase().trim();
+  // Try exact match first
+  if (CITY_COORDS[normalized]) return CITY_COORDS[normalized];
+  // Try partial match
+  for (const [key, coords] of Object.entries(CITY_COORDS)) {
+    if (normalized.includes(key) || key.includes(normalized)) return coords;
+  }
+  return null;
+}
+
+// POST /api/quote — Get shipping quote with distance-based pricing
 export async function POST(request: NextRequest) {
   const origin = request.headers.get("origin");
   const headers = corsHeaders(origin);
@@ -22,84 +74,96 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { pickup_city, delivery_city, package_size } = parsed.data;
+    const { pickup_city, delivery_city, package_size, pickup_lat, pickup_lng, delivery_lat, delivery_lng } = parsed.data;
 
     // Look up delivery zones for both cities
-    const { data: pickupZone } = await supabase
-      .from("delivery_zones")
-      .select("*")
-      .ilike("city", `%${pickup_city}%`)
-      .eq("is_active", true)
-      .limit(1)
-      .single();
-
-    const { data: deliveryZone } = await supabase
-      .from("delivery_zones")
-      .select("*")
-      .ilike("city", `%${delivery_city}%`)
-      .eq("is_active", true)
-      .limit(1)
-      .single();
+    const [{ data: pickupZone }, { data: deliveryZone }] = await Promise.all([
+      supabase.from("delivery_zones").select("*").ilike("city", `%${pickup_city}%`).eq("is_active", true).limit(1).single(),
+      supabase.from("delivery_zones").select("*").ilike("city", `%${delivery_city}%`).eq("is_active", true).limit(1).single(),
+    ]);
 
     // Size multiplier
     const sizeMultipliers: Record<string, number> = {
-      small: 0.8,
-      medium: 1.0,
-      large: 1.5,
-      extra_large: 2.0,
+      small: 0.8, medium: 1.0, large: 1.5, extra_large: 2.0,
     };
     const sizeMultiplier = sizeMultipliers[package_size] || 1.0;
 
-    // Calculate fee
-    let baseFee = 10; // Default base fee
-    let estimatedTime = 60; // Default 60 minutes
+    // ── Calculate distance ──
+    let distanceKm: number | null = null;
 
-    if (pickupZone && deliveryZone) {
-      // Both zones found — use average base fee + inter-zone surcharge
-      baseFee =
-        (parseFloat(String(pickupZone.base_fee)) +
-          parseFloat(String(deliveryZone.base_fee))) /
-        2;
-      estimatedTime = Math.max(
-        pickupZone.estimated_time_minutes || 60,
-        deliveryZone.estimated_time_minutes || 60
-      );
-
-      // If different cities, add surcharge
-      if (
-        pickup_city.toLowerCase().trim() !==
-        delivery_city.toLowerCase().trim()
-      ) {
-        baseFee *= 1.5;
-        estimatedTime *= 1.5;
-      }
-    } else if (pickupZone || deliveryZone) {
-      const zone = pickupZone || deliveryZone;
-      baseFee = parseFloat(String(zone!.base_fee));
-      estimatedTime = zone!.estimated_time_minutes || 60;
+    // Priority 1: Use provided coordinates
+    if (pickup_lat != null && pickup_lng != null && delivery_lat != null && delivery_lng != null) {
+      distanceKm = haversineKm(pickup_lat, pickup_lng, delivery_lat, delivery_lng);
     }
 
-    const fee = Math.round(baseFee * sizeMultiplier * 100) / 100;
+    // Priority 2: Use city coordinate lookup
+    if (distanceKm === null) {
+      const pickupCoords = getCityCoords(pickup_city);
+      const deliveryCoords = getCityCoords(delivery_city);
+      if (pickupCoords && deliveryCoords) {
+        distanceKm = haversineKm(pickupCoords.lat, pickupCoords.lng, deliveryCoords.lat, deliveryCoords.lng);
+      }
+    }
 
-    // Clamp fee within zone limits if available
-    const minFee = pickupZone?.min_fee || deliveryZone?.min_fee || 5;
-    const maxFee = pickupZone?.max_fee || deliveryZone?.max_fee || 100;
-    const clampedFee = Math.max(
-      parseFloat(String(minFee)),
-      Math.min(fee, parseFloat(String(maxFee)))
-    );
+    // ── Calculate fee ──
+    const zone = pickupZone || deliveryZone;
+    const baseFee = zone ? parseFloat(String(zone.base_fee)) || 10 : 10;
+    const perKmFee = zone ? parseFloat(String(zone.per_km_fee)) || 2 : 2;
+    const minFee = zone ? parseFloat(String(zone.min_fee)) || 5 : 5;
+    const maxFee = zone ? parseFloat(String(zone.max_fee)) || 500 : 500;
+    let estimatedTime = zone ? (zone.estimated_time_minutes || 60) : 60;
 
-    return NextResponse.json(
-      {
-        quote: {
-          fee: clampedFee,
-          estimated_time_minutes: Math.round(estimatedTime),
-          pickup_zone: pickupZone?.name || null,
-          delivery_zone: deliveryZone?.name || null,
+    let fee: number;
+
+    if (distanceKm !== null && distanceKm > 0) {
+      // Distance-based pricing: base_fee + (per_km_fee × distance)
+      fee = baseFee + (perKmFee * distanceKm);
+
+      // Estimate time: ~25 km/h average speed for motorcycle in Sierra Leone
+      const avgSpeedKmh = 25;
+      estimatedTime = Math.round((distanceKm / avgSpeedKmh) * 60) + 10; // +10 min for pickup/dropoff
+
+      // If cross-city (different zones), use average of both zone fees
+      if (pickupZone && deliveryZone && pickupZone.id !== deliveryZone.id) {
+        const avgBase = (parseFloat(String(pickupZone.base_fee)) + parseFloat(String(deliveryZone.base_fee))) / 2;
+        const avgPerKm = (parseFloat(String(pickupZone.per_km_fee)) + parseFloat(String(deliveryZone.per_km_fee))) / 2;
+        fee = avgBase + (avgPerKm * distanceKm);
+      }
+    } else {
+      // Fallback: zone-based flat fee (no distance data)
+      fee = baseFee;
+      const isCrossCity = pickup_city.toLowerCase().trim() !== delivery_city.toLowerCase().trim();
+      if (isCrossCity) {
+        fee *= 1.5;
+        estimatedTime *= 1.5;
+      }
+    }
+
+    // Apply size multiplier
+    fee *= sizeMultiplier;
+
+    // Clamp to min/max
+    fee = Math.max(minFee, Math.min(fee, maxFee));
+    fee = Math.round(fee * 100) / 100;
+
+    return NextResponse.json({
+      quote: {
+        fee,
+        estimated_time_minutes: Math.round(estimatedTime),
+        distance_km: distanceKm !== null ? Math.round(distanceKm * 10) / 10 : null,
+        pickup_zone: pickupZone?.name || null,
+        delivery_zone: deliveryZone?.name || null,
+        pricing_method: distanceKm !== null ? "distance" : "zone_flat",
+        breakdown: {
+          base_fee: baseFee,
+          per_km_fee: perKmFee,
+          distance_km: distanceKm !== null ? Math.round(distanceKm * 10) / 10 : null,
+          size_multiplier: sizeMultiplier,
+          min_fee: minFee,
+          max_fee: maxFee,
         },
       },
-      { headers }
-    );
+    }, { headers });
   } catch (err) {
     console.error("Error calculating quote:", err);
     return NextResponse.json(

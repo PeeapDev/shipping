@@ -1,9 +1,57 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 import { authenticateRequest } from "@/lib/auth";
+import { authenticateShippingRequest } from "@/lib/shipping-auth";
 import { corsHeaders, handleCORS } from "@/lib/cors";
 import { supabase } from "@/lib/supabase";
 
-const PEEAP_API_URL = process.env.API_BASE_URL || "https://api.peeap.com";
+const MAIN_SUPABASE_URL = process.env.MAIN_SUPABASE_URL || "https://akiecgwcxadcpqlvntmf.supabase.co";
+const MAIN_SUPABASE_KEY = process.env.MAIN_SUPABASE_SERVICE_KEY || "";
+function getMainDb() {
+  return createClient(MAIN_SUPABASE_URL, MAIN_SUPABASE_KEY, { auth: { persistSession: false } });
+}
+
+/** Auto-activate shipping app for a user on the main platform */
+async function activateShippingForUser(userId: string, role: string): Promise<void> {
+  if (!MAIN_SUPABASE_KEY) return;
+  const mainDb = getMainDb();
+  try {
+    // Find the shipping app ID
+    const { data: app } = await mainDb.from("apps").select("id").eq("slug", "shipping").single();
+    if (!app) return;
+
+    // Create subscription (ignore if exists)
+    await mainDb.from("user_app_subscriptions").upsert({
+      user_id: userId,
+      app_id: app.id,
+      subscription_type: "app",
+      app_tier: "starter",
+      status: "active",
+      price_monthly: 0,
+      currency: "NLE",
+    }, { onConflict: "user_id,app_id" });
+
+    // Enable shipping in user_apps_settings (for app launcher)
+    const { data: existingSettings } = await mainDb.from("user_apps_settings").select("user_id").eq("user_id", userId).maybeSingle();
+    if (existingSettings) {
+      await mainDb.from("user_apps_settings").update({ shipping_enabled: true }).eq("user_id", userId);
+    } else {
+      await mainDb.from("user_apps_settings").insert({ user_id: userId, shipping_enabled: true }).select().maybeSingle();
+    }
+
+    // Send notification
+    await mainDb.from("notifications").insert({
+      user_id: userId,
+      type: "shipping_staff_added",
+      title: `Shipping ${role.charAt(0).toUpperCase() + role.slice(1)} Role`,
+      message: `You have been added as a ${role} for Peeap Shipping. Access your dispatch dashboard at my.peeap.com/shipping`,
+      action_url: "/shipping",
+      is_read: false,
+    });
+  } catch (err) {
+    console.error("[Staff] Failed to activate shipping for user:", err);
+  }
+}
 
 export async function OPTIONS(request: NextRequest) {
   return handleCORS(request) || NextResponse.json({});
@@ -14,7 +62,7 @@ export async function GET(request: NextRequest) {
   const origin = request.headers.get("origin");
   const headers = corsHeaders(origin);
 
-  const auth = await authenticateRequest(request);
+  const auth = authenticateShippingRequest(request) || await authenticateRequest(request);
   if (!auth) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers });
   }
@@ -42,7 +90,7 @@ export async function POST(request: NextRequest) {
   const origin = request.headers.get("origin");
   const headers = corsHeaders(origin);
 
-  const auth = await authenticateRequest(request);
+  const auth = authenticateShippingRequest(request) || await authenticateRequest(request);
   if (!auth) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers });
   }
@@ -89,37 +137,14 @@ export async function POST(request: NextRequest) {
         .single();
 
       if (reactivateError) throw reactivateError;
+      activateShippingForUser(user_id, role);
       return NextResponse.json({ staff: reactivated }, { status: 200, headers });
     }
 
-    // Fetch the user's profile from Peeap API to store name/email/phone
-    let name = "Unknown User";
-    let email: string | null = null;
-    let phone: string | null = null;
-
-    try {
-      const profileRes = await fetch(
-        `${PEEAP_API_URL}/api/users/search?q=${encodeURIComponent(user_id)}&limit=1`
-      );
-      if (profileRes.ok) {
-        const profileData = await profileRes.json();
-        const users = profileData.users || [];
-        const user = users.find((u: any) => u.id === user_id);
-        if (user) {
-          name = [user.first_name, user.last_name].filter(Boolean).join(" ") || user.email || "Unknown User";
-          email = user.email || null;
-          phone = user.phone || null;
-        }
-      }
-    } catch (profileErr) {
-      console.error("[StaffAdd] Failed to fetch user profile:", profileErr);
-      // Continue with the info from the request body as fallback
-    }
-
-    // Also accept name/email/phone from frontend as fallback (from search results)
-    const finalName = body.name || name;
-    const finalEmail = body.email || email;
-    const finalPhone = body.phone || phone;
+    // Use name/email/phone from frontend (from search results)
+    const finalName = body.name || "Unknown User";
+    const finalEmail = body.email || null;
+    const finalPhone = body.phone || null;
 
     const { data, error } = await supabase
       .from("shipping_staff")
@@ -134,6 +159,9 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (error) throw error;
+
+    // Auto-activate shipping app + send notification on main platform
+    activateShippingForUser(user_id, role);
 
     return NextResponse.json({ staff: data }, { status: 201, headers });
   } catch (err) {
@@ -150,7 +178,7 @@ export async function PUT(request: NextRequest) {
   const origin = request.headers.get("origin");
   const headers = corsHeaders(origin);
 
-  const auth = await authenticateRequest(request);
+  const auth = authenticateShippingRequest(request) || await authenticateRequest(request);
   if (!auth) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers });
   }

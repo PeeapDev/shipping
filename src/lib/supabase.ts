@@ -4,12 +4,14 @@ let _supabase: SupabaseClient | null = null;
 
 export function getSupabase(): SupabaseClient {
   if (!_supabase) {
-    if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
-      throw new Error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
+    const url = process.env.SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SERVICE_SECRET;
+    if (!url || !key) {
+      throw new Error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY/SERVICE_SECRET");
     }
     _supabase = createClient(
-      process.env.SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_ROLE_KEY,
+      url,
+      key,
       { auth: { persistSession: false } }
     );
   }

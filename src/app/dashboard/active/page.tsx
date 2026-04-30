@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import {
   Package,
   MapPin,
@@ -10,6 +11,7 @@ import {
   User,
   Truck,
   RefreshCw,
+  ScanLine,
 } from "lucide-react";
 import type { DeliveryJob } from "@/types/shipping";
 
@@ -18,9 +20,11 @@ const statusColors: Record<string, string> = {
   assigned: "bg-blue-100 text-blue-700",
   picked_up: "bg-indigo-100 text-indigo-700",
   in_transit: "bg-purple-100 text-purple-700",
+  returning: "bg-amber-100 text-amber-700",
+  returned: "bg-orange-100 text-orange-700",
 };
 
-const statusSteps = ["pending", "assigned", "picked_up", "in_transit"];
+const statusSteps = ["pending", "assigned", "picked_up", "in_transit", "returning"];
 
 export default function ActiveDeliveriesPage() {
   const [deliveries, setDeliveries] = useState<DeliveryJob[]>([]);
@@ -28,6 +32,8 @@ export default function ActiveDeliveriesPage() {
 
   useEffect(() => {
     loadActiveDeliveries();
+    const interval = setInterval(() => loadActiveDeliveries(), 15_000);
+    return () => clearInterval(interval);
   }, []);
 
   async function loadActiveDeliveries() {
@@ -37,7 +43,7 @@ export default function ActiveDeliveriesPage() {
       if (res.ok) {
         const data = await res.json();
         const active = (data.deliveries || []).filter((j: DeliveryJob) =>
-          ["pending", "assigned", "picked_up", "in_transit"].includes(j.status)
+          ["pending", "assigned", "picked_up", "in_transit", "returning"].includes(j.status)
         );
         setDeliveries(active);
       }
@@ -130,6 +136,17 @@ export default function ActiveDeliveriesPage() {
                     </p>
                   </div>
                   <div className="text-right">
+                    {/* SLA Warning */}
+                    {(() => {
+                      const elapsed = Math.round((Date.now() - new Date(job.created_at).getTime()) / 60000);
+                      const isOverdue = elapsed > 90; // Over 90 minutes
+                      const isWarning = elapsed > 60; // Over 60 minutes
+                      return (
+                        <div className={`text-xs font-medium mb-1 ${isOverdue ? 'text-red-600' : isWarning ? 'text-amber-600' : 'text-gray-400'}`}>
+                          {isOverdue ? '⚠ OVERDUE' : ''} {elapsed < 60 ? `${elapsed}m` : `${Math.floor(elapsed/60)}h ${elapsed%60}m`} elapsed
+                        </div>
+                      );
+                    })()}
                     <div className="font-semibold text-gray-900">
                       Le {job.shipping_fee.toFixed(2)}
                     </div>
@@ -235,29 +252,14 @@ export default function ActiveDeliveriesPage() {
                       Assign Driver
                     </button>
                   )}
-                  {job.status === "assigned" && (
-                    <button
-                      onClick={() => updateStatus(job.id, "picked_up")}
-                      className="text-xs bg-indigo-600 text-white px-3 py-1.5 rounded-lg hover:bg-indigo-700"
+                  {(job.status === "assigned" || job.status === "in_transit") && (
+                    <Link
+                      href="/dashboard/dispatch"
+                      className="text-xs bg-violet-600 text-white px-3 py-1.5 rounded-lg hover:bg-violet-700 inline-flex items-center gap-1"
                     >
-                      Mark Picked Up
-                    </button>
-                  )}
-                  {job.status === "picked_up" && (
-                    <button
-                      onClick={() => updateStatus(job.id, "in_transit")}
-                      className="text-xs bg-purple-600 text-white px-3 py-1.5 rounded-lg hover:bg-purple-700"
-                    >
-                      Mark In Transit
-                    </button>
-                  )}
-                  {job.status === "in_transit" && (
-                    <button
-                      onClick={() => updateStatus(job.id, "delivered")}
-                      className="text-xs bg-green-600 text-white px-3 py-1.5 rounded-lg hover:bg-green-700"
-                    >
-                      Mark Delivered
-                    </button>
+                      <ScanLine className="h-3.5 w-3.5" />
+                      {job.status === "assigned" ? "Verify & Collect" : "Verify & Deliver"}
+                    </Link>
                   )}
                   {!["delivered", "completed", "cancelled", "failed"].includes(job.status) && (
                     <button

@@ -3,8 +3,9 @@ import { z } from "zod";
 // ── Delivery job schemas ──
 
 export const createDeliveryJobSchema = z.object({
-  store_order_id: z.string().uuid().optional(),
-  transaction_id: z.string().uuid().optional(),
+  // Accept null/undefined — upstream API sends null when there's no order/transaction yet
+  store_order_id: z.string().uuid().nullish().transform((v) => v ?? undefined),
+  transaction_id: z.string().uuid().nullish().transform((v) => v ?? undefined),
   merchant_id: z.string().uuid(),
   merchant_name: z.string().max(255).optional(),
   customer_id: z.string().uuid(),
@@ -38,6 +39,9 @@ export const createDeliveryJobSchema = z.object({
     .enum(["small", "medium", "large", "extra_large"])
     .default("medium"),
   requires_signature: z.boolean().default(false),
+  // COD (Cash on Delivery)
+  is_cod: z.boolean().default(false),
+  cod_amount: z.number().min(0).default(0),
   // Items & metadata
   items: z.array(z.any()).default([]),
   metadata: z.record(z.any()).default({}),
@@ -53,9 +57,13 @@ export const updateDeliveryStatusSchema = z.object({
     "completed",
     "cancelled",
     "failed",
+    "returning",
+    "returned",
   ]),
+  driver_id: z.string().uuid().optional(),
   cancel_reason: z.string().optional(),
   failure_reason: z.string().optional(),
+  return_reason: z.string().optional(),
   proof_of_delivery_url: z.string().url().optional(),
 });
 
@@ -106,4 +114,58 @@ export const quoteRequestSchema = z.object({
   package_size: z
     .enum(["small", "medium", "large", "extra_large"])
     .default("medium"),
+  // Optional coordinates for distance-based pricing
+  pickup_lat: z.number().min(-90).max(90).optional(),
+  pickup_lng: z.number().min(-180).max(180).optional(),
+  delivery_lat: z.number().min(-90).max(90).optional(),
+  delivery_lng: z.number().min(-180).max(180).optional(),
+});
+
+// ── Driver location update ──
+
+export const driverLocationSchema = z.object({
+  lat: z.number().min(-90).max(90),
+  lng: z.number().min(-180).max(180),
+});
+
+// ── Driver online/offline toggle ──
+
+export const driverOnlineSchema = z.object({
+  is_online: z.boolean(),
+});
+
+// ── Rate delivery ──
+
+export const rateDeliverySchema = z.object({
+  rating: z.number().int().min(1).max(5),
+  comment: z.string().max(500).optional(),
+});
+
+// ── Dispatch settings ──
+
+export const dispatchSettingsSchema = z.object({
+  dispatch_radius_km: z.number().min(1).max(100).optional(),
+  offer_timeout_seconds: z.number().min(15).max(300).optional(),
+  max_dispatch_attempts: z.number().int().min(1).max(10).optional(),
+  platform_fee_pct: z.number().min(0).max(100).optional(),
+  driver_payout_pct: z.number().min(0).max(100).optional(),
+  min_driver_rating: z.number().min(0).max(5).optional(),
+});
+
+// ── Driver application (apply) ──
+
+export const applySchema = z.object({
+  name: z.string().min(1).max(255),
+  phone: z.string().min(1).max(50),
+  email: z.string().email().max(255).optional(),
+  city: z.string().min(1).max(100),
+  vehicle_type: z
+    .enum(["motorcycle", "car", "bicycle", "foot"])
+    .default("motorcycle"),
+  vehicle_plate: z.string().max(50).optional(),
+  experience_years: z.number().int().min(0).max(50).optional(),
+  bio: z.string().max(1000).optional(),
+  available_hours: z
+    .enum(["full_time", "part_time", "weekends"])
+    .default("full_time"),
 });

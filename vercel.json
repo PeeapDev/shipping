@@ -1,1 +1,10 @@
-{ "framework": "nextjs", "regions": ["iad1"] }
+{
+  "framework": "nextjs",
+  "regions": ["iad1"],
+  "crons": [
+    {
+      "path": "/api/keepalive",
+      "schedule": "0 6 * * *"
+    }
+  ]
+}

@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateRequest } from "@/lib/auth";
+import { authenticateShippingRequest } from "@/lib/shipping-auth";
 import { corsHeaders, handleCORS } from "@/lib/cors";
 import { supabase } from "@/lib/supabase";
 import { updateDeliveryStatusSchema } from "@/lib/validation";
+import { sendShippingUpdateToChat } from "@/lib/chat-client";
 
 export async function OPTIONS(request: NextRequest) {
   return handleCORS(request) || NextResponse.json({});
@@ -16,7 +18,8 @@ export async function GET(
   const origin = request.headers.get("origin");
   const headers = corsHeaders(origin);
 
-  const auth = await authenticateRequest(request);
+  const shippingAuth = authenticateShippingRequest(request);
+  const auth = shippingAuth || await authenticateRequest(request);
   if (!auth) {
     return NextResponse.json(
       { error: "Unauthorized" },
@@ -27,7 +30,7 @@ export async function GET(
   try {
     const { data: delivery, error } = await supabase
       .from("delivery_jobs")
-      .select("*, driver:drivers(*), tracking_updates(*)")
+      .select("*, driver:drivers!delivery_jobs_driver_id_fkey(*), tracking_updates(*)")
       .eq("id", params.id)
       .single();
 
@@ -38,32 +41,34 @@ export async function GET(
       );
     }
 
-    // Verify access: must be merchant, customer, or assigned driver
-    const isOwner =
-      delivery.merchant_id === auth.sub ||
-      delivery.customer_id === auth.sub;
+    // Shipping staff can access any delivery
+    if (!shippingAuth) {
+      // Verify access: must be merchant, customer, or assigned driver
+      const isOwner =
+        delivery.merchant_id === auth.sub ||
+        delivery.customer_id === auth.sub;
 
-    if (!isOwner) {
-      // Check if user is the assigned driver
-      if (delivery.driver_id) {
-        const { data: driverRecord } = await supabase
-          .from("drivers")
-          .select("id")
-          .eq("id", delivery.driver_id)
-          .eq("user_id", auth.sub)
-          .single();
+      if (!isOwner) {
+        if (delivery.driver_id) {
+          const { data: driverRecord } = await supabase
+            .from("drivers")
+            .select("id")
+            .eq("id", delivery.driver_id)
+            .eq("user_id", auth.sub)
+            .single();
 
-        if (!driverRecord) {
+          if (!driverRecord) {
+            return NextResponse.json(
+              { error: "Unauthorized" },
+              { status: 403, headers }
+            );
+          }
+        } else {
           return NextResponse.json(
             { error: "Unauthorized" },
             { status: 403, headers }
           );
         }
-      } else {
-        return NextResponse.json(
-          { error: "Unauthorized" },
-          { status: 403, headers }
-        );
       }
     }
 
@@ -93,7 +98,8 @@ export async function PUT(
   const origin = request.headers.get("origin");
   const headers = corsHeaders(origin);
 
-  const auth = await authenticateRequest(request);
+  const shippingAuth = authenticateShippingRequest(request);
+  const auth = shippingAuth || await authenticateRequest(request);
   if (!auth) {
     return NextResponse.json(
       { error: "Unauthorized" },
@@ -114,7 +120,7 @@ export async function PUT(
     // Fetch existing delivery
     const { data: existing, error: fetchError } = await supabase
       .from("delivery_jobs")
-      .select("id, merchant_id, customer_id, driver_id, status")
+      .select("id, merchant_id, customer_id, driver_id, status, job_number, delivery_address, merchant_name, metadata")
       .eq("id", params.id)
       .single();
 
@@ -125,25 +131,27 @@ export async function PUT(
       );
     }
 
-    // Verify access
-    let isDriver = false;
-    if (existing.driver_id) {
-      const { data: driverRecord } = await supabase
-        .from("drivers")
-        .select("id")
-        .eq("id", existing.driver_id)
-        .eq("user_id", auth.sub)
-        .single();
-      isDriver = !!driverRecord;
-    }
+    // Shipping staff can update any delivery
+    if (!shippingAuth) {
+      let isDriver = false;
+      if (existing.driver_id) {
+        const { data: driverRecord } = await supabase
+          .from("drivers")
+          .select("id")
+          .eq("id", existing.driver_id)
+          .eq("user_id", auth.sub)
+          .single();
+        isDriver = !!driverRecord;
+      }
 
-    const isMerchant = existing.merchant_id === auth.sub;
+      const isMerchant = existing.merchant_id === auth.sub;
 
-    if (!isMerchant && !isDriver) {
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 403, headers }
-      );
+      if (!isMerchant && !isDriver) {
+        return NextResponse.json(
+          { error: "Unauthorized" },
+          { status: 403, headers }
+        );
+      }
     }
 
     // Validate status transition
@@ -151,11 +159,13 @@ export async function PUT(
       pending: ["assigned", "cancelled"],
       assigned: ["picked_up", "cancelled"],
       picked_up: ["in_transit", "cancelled", "failed"],
-      in_transit: ["delivered", "failed"],
+      in_transit: ["delivered", "failed", "returning"],
       delivered: ["completed"],
       completed: [],
       cancelled: [],
-      failed: [],
+      failed: ["returning"],       // failed can trigger return-to-sender
+      returning: ["returned"],     // rider returns package to vendor
+      returned: [],                // terminal
     };
 
     const allowed = validTransitions[existing.status] || [];
@@ -172,6 +182,11 @@ export async function PUT(
       status: parsed.data.status,
       updated_at: new Date().toISOString(),
     };
+
+    // Set driver when assigning
+    if (parsed.data.driver_id && parsed.data.status === "assigned") {
+      updateData.driver_id = parsed.data.driver_id;
+    }
 
     // Set timestamps based on status
     if (parsed.data.status === "picked_up") {
@@ -197,7 +212,7 @@ export async function PUT(
       .from("delivery_jobs")
       .update(updateData)
       .eq("id", params.id)
-      .select("*, driver:drivers(*)")
+      .select("*, driver:drivers!delivery_jobs_driver_id_fkey(*)")
       .single();
 
     if (updateError) throw updateError;
@@ -219,6 +234,26 @@ export async function PUT(
       message: statusMessages[parsed.data.status] || `Status updated to ${parsed.data.status}`,
       updated_by: auth.sub,
     });
+
+    // Send chat notification to buyer (non-blocking)
+    const NIL_UUID = "00000000-0000-0000-0000-000000000000";
+    if (existing.customer_id && existing.customer_id !== NIL_UUID) {
+      const meta = (existing.metadata as Record<string, string>) || {};
+      const storeId = meta.store_id || existing.merchant_id;
+      const storeName = meta.store_name || existing.merchant_name || "Store";
+      const driverName = updated.driver?.name || undefined;
+
+      sendShippingUpdateToChat({
+        job_number: existing.job_number,
+        store_id: storeId,
+        store_name: storeName,
+        buyer_user_id: existing.customer_id,
+        seller_user_id: existing.merchant_id,
+        new_status: parsed.data.status,
+        delivery_address: existing.delivery_address,
+        driver_name: driverName,
+      }).catch(() => {});
+    }
 
     // If completed, update driver stats
     if (parsed.data.status === "completed" && updated.driver_id) {

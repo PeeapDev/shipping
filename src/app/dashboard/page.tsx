@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Truck,
   PackageCheck,
@@ -13,6 +13,8 @@ import {
   ChevronRight,
 } from "lucide-react";
 import type { DeliveryJob, DashboardStats } from "@/types/shipping";
+import { DeliveryMap } from "@/components/DeliveryMap";
+import { useNotifications } from "@/lib/use-notifications";
 
 const statusColors: Record<string, string> = {
   pending: "bg-yellow-100 text-yellow-700",
@@ -23,6 +25,8 @@ const statusColors: Record<string, string> = {
   completed: "bg-emerald-100 text-emerald-700",
   cancelled: "bg-red-100 text-red-700",
   failed: "bg-red-100 text-red-700",
+  returning: "bg-amber-100 text-amber-700",
+  returned: "bg-orange-100 text-orange-700",
 };
 
 export default function DashboardPage() {
@@ -35,13 +39,21 @@ export default function DashboardPage() {
   });
   const [recentJobs, setRecentJobs] = useState<DeliveryJob[]>([]);
   const [loading, setLoading] = useState(true);
+  const [lastJobCount, setLastJobCount] = useState<number | null>(null);
+  const { notifyNewJob } = useNotifications();
+  const prevJobIds = useRef(new Set<string>());
 
   useEffect(() => {
     loadDashboard();
+    const interval = setInterval(() => loadDashboard(), 15_000);
+    return () => clearInterval(interval);
   }, []);
 
   async function loadDashboard() {
     try {
+      // Expire stale dispatch offers on each load (no cron on Hobby plan)
+      fetch("/api/dispatch").catch(() => {});
+
       const [deliveriesRes, driversRes] = await Promise.all([
         fetch("/api/deliveries?limit=5"),
         fetch("/api/drivers"),
@@ -49,6 +61,28 @@ export default function DashboardPage() {
 
       if (deliveriesRes.ok) {
         const dData = await deliveriesRes.json();
+        const newTotal = dData.total || (dData.deliveries || []).length;
+
+        // Alert on new jobs — use notification hook with sounds
+        if (lastJobCount !== null && newTotal > lastJobCount) {
+          const jobs = dData.deliveries || [];
+          // Find jobs not seen before and notify each
+          for (const job of jobs) {
+            if (!prevJobIds.current.has(job.id) && job.status === "pending") {
+              notifyNewJob(job);
+            }
+          }
+          // Update document title
+          const newCount = newTotal - lastJobCount;
+          document.title = `(${newCount} new) Peeap Shipping`;
+          setTimeout(() => { document.title = "Peeap Shipping"; }, 5000);
+        }
+        // Track seen jobs
+        for (const job of (dData.deliveries || [])) {
+          prevJobIds.current.add(job.id);
+        }
+        setLastJobCount(newTotal);
+
         setRecentJobs(dData.deliveries || []);
         const active = (dData.deliveries || []).filter((j: DeliveryJob) =>
           ["pending", "assigned", "picked_up", "in_transit"].includes(j.status)
@@ -175,7 +209,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Active Deliveries Map Placeholder */}
+      {/* Active Deliveries Map */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="p-5 border-b border-gray-200 flex items-center justify-between">
           <h2 className="font-semibold text-gray-900">Active Deliveries Map</h2>
@@ -183,15 +217,7 @@ export default function DashboardPage() {
             {stats.active_deliveries} active
           </span>
         </div>
-        <div className="h-64 bg-gray-100 flex items-center justify-center">
-          <div className="text-center text-gray-400">
-            <MapPin className="h-12 w-12 mx-auto mb-2 opacity-50" />
-            <p className="text-sm">Map integration coming soon</p>
-            <p className="text-xs mt-1">
-              Live driver locations will appear here
-            </p>
-          </div>
-        </div>
+        <DeliveryMap jobs={recentJobs.filter(j => ["pending", "assigned", "picked_up", "in_transit", "returning"].includes(j.status))} />
       </div>
 
       {/* Recent Deliveries */}

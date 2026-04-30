@@ -32,7 +32,9 @@ export type DeliveryStatus =
   | "delivered"
   | "completed"
   | "cancelled"
-  | "failed";
+  | "failed"
+  | "returning"
+  | "returned";
 
 export type PackageSize = "small" | "medium" | "large" | "extra_large";
 
@@ -82,6 +84,22 @@ export interface DeliveryJob {
   package_size: PackageSize;
   requires_signature: boolean;
   proof_of_delivery_url: string | null;
+  // Verification codes
+  pickup_code: string | null;
+  delivery_code: string | null;
+  pickup_verified_at: string | null;
+  delivery_verified_at: string | null;
+  estimated_delivery_date: string | null;
+  // Return
+  return_code: string | null;
+  return_verified_at: string | null;
+  return_reason: string | null;
+  refund_status: string | null;
+  refund_amount: number;
+  // COD
+  is_cod: boolean;
+  cod_amount: number;
+  cod_collected: boolean;
   // Metadata
   items: unknown[];
   metadata: Record<string, unknown>;
