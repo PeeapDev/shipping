@@ -3,7 +3,14 @@ import { authenticateShippingRequest } from "@/lib/shipping-auth";
 import { corsHeaders, handleCORS } from "@/lib/cors";
 import { supabase } from "@/lib/supabase";
 
-const CHAT_API = process.env.CHAT_API_URL || "https://chat.peeap.com";
+// CHAT_API may point to a service that's been deleted (chat's Supabase
+// project was removed by free-tier auto-cleanup on 2026-04-30). When the
+// env var is unset OR points to chat.peeap.com which can't reach a DB,
+// every proxied call would hang on a 30s timeout. We short-circuit with
+// a 503 so callers see the degraded state immediately. Set CHAT_API_URL
+// to the new chat backend once it's back online.
+const CHAT_API = process.env.CHAT_API_URL || "";
+const CHAT_DISABLED = !CHAT_API;
 const SERVICE_SECRET = process.env.SERVICE_SECRET || "";
 
 export async function OPTIONS(request: NextRequest) {
@@ -30,16 +37,31 @@ export async function GET(request: NextRequest) {
 
     // If requesting messages for a specific job (by job_number)
     if (conversationId) {
-      // conversationId here is actually a job_number — fetch messages from chat
-      const res = await fetch(`${CHAT_API}/api/conversations/${conversationId}/messages?limit=50`, {
-        headers: { "X-Service-Secret": SERVICE_SECRET },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        return NextResponse.json(data, { headers });
+      if (CHAT_DISABLED) {
+        return NextResponse.json(
+          { error: "Chat service unavailable", messages: [], has_more: false },
+          { status: 503, headers }
+        );
       }
-      // Fallback: return empty if chat API fails
-      return NextResponse.json({ messages: [], has_more: false }, { headers });
+      // conversationId here is actually a job_number — fetch messages from chat
+      try {
+        const res = await fetch(
+          `${CHAT_API}/api/conversations/${conversationId}/messages?limit=50`,
+          { headers: { "X-Service-Secret": SERVICE_SECRET }, signal: AbortSignal.timeout(8000) }
+        );
+        if (res.ok) {
+          return NextResponse.json(await res.json(), { headers });
+        }
+        return NextResponse.json(
+          { error: `Chat upstream error ${res.status}`, messages: [], has_more: false },
+          { status: 502, headers }
+        );
+      } catch (e: any) {
+        return NextResponse.json(
+          { error: `Chat unreachable: ${e?.message || 'timeout'}`, messages: [], has_more: false },
+          { status: 502, headers }
+        );
+      }
     }
 
     // Get all delivery jobs
@@ -102,25 +124,41 @@ export async function POST(request: NextRequest) {
     const buyerId = recipient_id || job.customer_id;
     const sellerId = job.merchant_id;
 
+    if (CHAT_DISABLED) {
+      return NextResponse.json(
+        { error: "Chat service unavailable; message not sent" },
+        { status: 503, headers }
+      );
+    }
+
     // Send via chat ecommerce endpoint
-    const chatRes = await fetch(`${CHAT_API}/api/ecommerce/messages`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Service-Secret": SERVICE_SECRET },
-      body: JSON.stringify({
-        order_id: job.job_number,
-        store_id: storeId,
-        buyer_user_id: buyerId,
-        seller_user_id: sellerId,
-        category: "shipping_update",
-        content: message,
-        rich_content: {
-          job_number: job.job_number,
-          sent_by: "shipping_admin",
-          admin_email: auth.email,
-        },
-        tracking_number: job.job_number,
-      }),
-    });
+    let chatRes: Response;
+    try {
+      chatRes = await fetch(`${CHAT_API}/api/ecommerce/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Service-Secret": SERVICE_SECRET },
+        body: JSON.stringify({
+          order_id: job.job_number,
+          store_id: storeId,
+          buyer_user_id: buyerId,
+          seller_user_id: sellerId,
+          category: "shipping_update",
+          content: message,
+          rich_content: {
+            job_number: job.job_number,
+            sent_by: "shipping_admin",
+            admin_email: auth.email,
+          },
+          tracking_number: job.job_number,
+        }),
+        signal: AbortSignal.timeout(8000),
+      });
+    } catch (e: any) {
+      return NextResponse.json(
+        { error: `Chat unreachable: ${e?.message || 'timeout'}` },
+        { status: 502, headers }
+      );
+    }
 
     if (!chatRes.ok) {
       const err = await chatRes.text().catch(() => "Unknown error");
