@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { openPeeapSignIn } from "@/lib/peeap-popup";
 
 const PEEAP_ORIGIN = "https://my.peeap.com";
 
@@ -47,12 +48,8 @@ export function DashboardEntry({ children, className }: { children: React.ReactN
     setError("");
     setLoading(true);
 
-    // Open synchronously with the click so popup blockers do not intercept it.
-    const url = new URL("/auth/signin", PEEAP_ORIGIN);
-    url.searchParams.set("mode", "popup");
-    url.searchParams.set("origin", window.location.origin);
-    url.searchParams.set("targetApp", "shipping");
-    const popup = window.open("about:blank", "peeap-shipping-signin", "popup,width=480,height=700");
+    // Open directly within the user's click; no blank tab or delayed navigation.
+    const popup = openPeeapSignIn();
     if (!popup) {
       setError("Allow the Peeap sign-in popup, then try again.");
       setLoading(false);
@@ -70,8 +67,6 @@ export function DashboardEntry({ children, className }: { children: React.ReactN
     } catch {
       // The protected exchange will still check authorization after Peeap sign-in.
     }
-    popup.location.href = url.toString();
-    popup.focus();
   }
 
   return (

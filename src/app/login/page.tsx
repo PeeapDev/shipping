@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Truck, Loader2, AlertCircle, LogIn } from "lucide-react";
+import { openPeeapSignIn } from "@/lib/peeap-popup";
 
 const PEEAP_ORIGIN = "https://my.peeap.com";
 
@@ -43,18 +44,13 @@ export default function LoginPage() {
 
   function openPeeapLogin() {
     setError("");
-    const url = new URL("/auth/signin", PEEAP_ORIGIN);
-    url.searchParams.set("mode", "popup");
-    url.searchParams.set("origin", window.location.origin);
-    url.searchParams.set("targetApp", "shipping");
-    const popup = window.open(url.toString(), "peeap-shipping-signin", "popup,width=480,height=700");
+    const popup = openPeeapSignIn();
     if (!popup) {
       setError("Allow the Peeap sign-in popup in your browser, then try again.");
       return;
     }
     popupRef.current = popup;
     setLoading(true);
-    popup.focus();
   }
 
   return (
