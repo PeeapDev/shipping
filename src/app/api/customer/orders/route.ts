@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
   if (!mainKey) return NextResponse.json({ error: "Order history is temporarily unavailable" }, { status: 503 });
 
   const mainDb = createClient(mainUrl, mainKey, { auth: { persistSession: false } });
-  const { data: user, error: userError } = await mainDb.from("users").select("id, status").eq("id", session.sub).maybeSingle();
+  const { data: user, error: userError } = await mainDb.from("users").select("id, status, first_name").eq("id", session.sub).maybeSingle();
   if (userError) return NextResponse.json({ error: "Account check unavailable" }, { status: 503 });
   if (!user || String(user.status || "").toUpperCase() !== "ACTIVE") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -23,19 +23,21 @@ export async function GET(request: NextRequest) {
   if (walletError) return NextResponse.json({ error: "Could not load orders" }, { status: 503 });
 
   let transactions: Array<Record<string, unknown>> = [];
+  let total = 0;
   if (wallets?.length) {
     const result = await mainDb.from("transactions")
-      .select("id, amount, currency, status, metadata, created_at")
+      .select("id, amount, currency, status, metadata, created_at", { count: "exact" })
       .in("wallet_id", wallets.map((wallet) => wallet.id))
       .eq("type", "PURCHASE")
       .filter("metadata->>type", "eq", "store_purchase")
       .order("created_at", { ascending: false }).limit(limit);
     if (result.error) return NextResponse.json({ error: "Could not load orders" }, { status: 503 });
     transactions = result.data || [];
+    total = result.count || 0;
   }
 
   const { data: jobs, error: jobsError } = await supabase.from("delivery_jobs")
-    .select("job_number, status, customer_id, created_at")
+    .select("job_number, status, customer_id, created_at, package_description, estimated_delivery_date, merchant_name, delivery_city")
     .eq("customer_id", session.sub)
     .order("created_at", { ascending: false }).limit(100);
   if (jobsError) return NextResponse.json({ error: "Could not load deliveries" }, { status: 503 });
@@ -54,8 +56,20 @@ export async function GET(request: NextRequest) {
       order_status: transaction.status === "REVERSED" ? "cancelled" : (metadata.order_status || "processing"),
       shipping_job_number: jobNumber,
       shipping_status: shipment?.status || null,
+      package_description: shipment?.package_description || null,
+      estimated_delivery_date: shipment?.estimated_delivery_date || null,
+      shipping_created_at: shipment?.created_at || null,
       created_at: transaction.created_at,
     };
   });
-  return NextResponse.json({ orders, total: orders.length }, { headers: { "Cache-Control": "private, no-store" } });
+  const deliveries = (jobs || []).map((job) => ({
+    job_number: job.job_number,
+    status: job.status,
+    created_at: job.created_at,
+    package_description: job.package_description || null,
+    estimated_delivery_date: job.estimated_delivery_date || null,
+    merchant_name: job.merchant_name || null,
+    delivery_city: job.delivery_city || null,
+  }));
+  return NextResponse.json({ orders, deliveries, total, has_more: total > orders.length, customer_name: user.first_name || null }, { headers: { "Cache-Control": "private, no-store" } });
 }
