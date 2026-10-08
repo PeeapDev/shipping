@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { DashboardEntry } from "@/components/DashboardEntry";
 import {
   Truck,
   MapPin,
@@ -32,12 +33,11 @@ export default function LandingPage() {
               >
                 Track Package
               </Link>
-              <Link
-                href="/dashboard"
+              <DashboardEntry
                 className="bg-violet-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-violet-700 transition-colors"
               >
                 Dashboard
-              </Link>
+              </DashboardEntry>
             </div>
           </div>
         </div>
@@ -58,13 +58,12 @@ export default function LandingPage() {
               pricing.
             </p>
             <div className="mt-8 flex flex-col sm:flex-row gap-4">
-              <Link
-                href="/dashboard"
+              <DashboardEntry
                 className="inline-flex items-center justify-center bg-white text-violet-700 px-6 py-3 rounded-lg font-semibold hover:bg-violet-50 transition-colors"
               >
                 Get Started
                 <ChevronRight className="ml-2 h-5 w-5" />
-              </Link>
+              </DashboardEntry>
               <Link
                 href="/apply"
                 className="inline-flex items-center justify-center border-2 border-white text-white px-6 py-3 rounded-lg font-semibold hover:bg-white/10 transition-colors"
@@ -267,7 +266,7 @@ export default function LandingPage() {
                 </div>
               </div>
               <Link
-                href="/dashboard"
+                href="/apply"
                 className="inline-flex items-center bg-white text-violet-700 px-6 py-3 rounded-lg font-semibold hover:bg-violet-50 transition-colors"
               >
                 Sign Up as Driver
@@ -364,12 +363,11 @@ export default function LandingPage() {
                   </Link>
                 </li>
                 <li>
-                  <Link
-                    href="/dashboard"
+                  <DashboardEntry
                     className="hover:text-white transition-colors"
                   >
                     Dashboard
-                  </Link>
+                  </DashboardEntry>
                 </li>
                 <li>
                   <a
