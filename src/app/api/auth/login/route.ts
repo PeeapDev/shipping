@@ -96,14 +96,10 @@ export async function POST(request: NextRequest) {
     // Auto-add as admin if they're a superadmin/admin in main system
     let staffRole = staffRecord?.role || "dispatcher";
 
-    // Shipping superadmin emails — auto-register as admin
-    const SHIPPING_ADMINS = ["dev@school.edu.sl"];
-    const isShippingAdmin = SHIPPING_ADMINS.includes(user.email.toLowerCase());
-
-    const userRoles: string[] = Array.isArray(user.roles) ? user.roles : [];
+    const userRoles: string[] = Array.isArray(user.roles) ? user.roles.map((role: string) => role.toLowerCase()) : [];
     const isMainAdmin = userRoles.includes("admin") || userRoles.includes("superadmin");
 
-    if (!staffRecord && (isMainAdmin || isShippingAdmin)) {
+    if (!staffRecord && isMainAdmin) {
       // Auto-register admins as shipping admins
       const { data: newStaff, error: staffCreateError } = await supabase
         .from("shipping_staff")
