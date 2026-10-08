@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
   }
 
   const { data: jobs, error: jobsError } = await supabase.from("delivery_jobs")
-    .select("job_number, status, customer_id, created_at, package_description, estimated_delivery_date, merchant_name, delivery_city")
+    .select("job_number, status, customer_id, created_at, package_description, estimated_delivery_date, merchant_name, pickup_address, pickup_city, delivery_address, delivery_city, shipping_fee")
     .eq("customer_id", session.sub)
     .order("created_at", { ascending: false }).limit(100);
   if (jobsError) return NextResponse.json({ error: "Could not load deliveries" }, { status: 503 });
@@ -51,6 +51,9 @@ export async function GET(request: NextRequest) {
       order_number: typeof metadata.order_number === "string" ? metadata.order_number : null,
       store_name: typeof metadata.store_name === "string" ? metadata.store_name : "Peeap Store",
       amount: Math.abs(Number(transaction.amount || 0)),
+      product_total: Number(metadata.product_total ?? 0),
+      delivery_fee: Number(metadata.delivery_fee ?? 0),
+      delivery_address: metadata.delivery_address || null,
       currency: transaction.currency,
       payment_status: transaction.status,
       order_status: transaction.status === "REVERSED" ? "cancelled" : (metadata.order_status || "processing"),
@@ -70,6 +73,10 @@ export async function GET(request: NextRequest) {
     estimated_delivery_date: job.estimated_delivery_date || null,
     merchant_name: job.merchant_name || null,
     delivery_city: job.delivery_city || null,
+    pickup_address: job.pickup_address || null,
+    pickup_city: job.pickup_city || null,
+    delivery_address: job.delivery_address || null,
+    shipping_fee: Number(job.shipping_fee || 0),
   }));
   return NextResponse.json({ orders, deliveries, total, has_more: total > orders.length, customer_name: user.first_name || null }, { headers: { "Cache-Control": "private, no-store" } });
 }
