@@ -43,7 +43,7 @@ export function PeeapAuthDialog({ onClose }: { onClose: () => void }) {
         const result = await response.json();
         if (!response.ok) throw new Error(result.error || "Shipping sign-in failed");
         onClose();
-        router.push("/dashboard");
+        router.push(result.destination === "/my-orders" ? "/my-orders" : "/dashboard");
         router.refresh();
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : "Shipping sign-in failed");

@@ -100,9 +100,27 @@ export function authenticateShippingRequest(
       Buffer.from(encoded, "base64url").toString()
     );
 
-    if (payload.exp && payload.exp < Date.now()) return null;
+    if (!payload.sub || !payload.exp || payload.exp < Date.now() || payload.role === "customer") return null;
 
     return payload;
+  } catch {
+    return null;
+  }
+}
+
+/** Customer sessions are deliberately separate from operational staff sessions. */
+export function authenticateCustomerRequest(request: NextRequest): ShippingAuthPayload | null {
+  if (!TOKEN_SECRET) return null;
+  const token = request.cookies.get("peeap_shipping_customer_token")?.value;
+  if (!token?.startsWith("shp_")) return null;
+  try {
+    const raw = token.slice(4);
+    const dot = raw.lastIndexOf(".");
+    if (dot <= 0) return null;
+    const encoded = raw.slice(0, dot);
+    if (!safeEqual(raw.slice(dot + 1), sign(encoded))) return null;
+    const payload: ShippingAuthPayload = JSON.parse(Buffer.from(encoded, "base64url").toString());
+    return payload.role === "customer" && !!payload.sub && payload.exp > Date.now() ? payload : null;
   } catch {
     return null;
   }

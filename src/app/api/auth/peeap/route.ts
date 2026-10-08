@@ -59,7 +59,12 @@ export async function POST(request: NextRequest) {
     const roles: string[] = Array.isArray(user.roles) ? user.roles.map((role: string) => role.toLowerCase()) : [];
     const mainAdmin = roles.includes("admin") || roles.includes("superadmin");
     if (!mainAdmin) {
-      return NextResponse.json({ error: "You do not have shipping dashboard access" }, { status: 403 });
+      const nowMs = Date.now();
+      const session = createShippingToken({ sub: user.id, email: user.email || "", role: "customer", iat: nowMs, exp: nowMs + 7 * 24 * 60 * 60 * 1000 });
+      const response = NextResponse.json({ success: true, destination: "/my-orders", user: { id: user.id, email: user.email, name: `${user.first_name || ""} ${user.last_name || ""}`.trim(), role: "customer", profile_picture: user.profile_picture } });
+      response.cookies.set("peeap_shipping_customer_token", session, { httpOnly: true, secure: true, sameSite: "lax", path: "/", maxAge: 7 * 24 * 60 * 60 });
+      response.cookies.delete("peeap_shipping_token");
+      return response;
     }
     const { data: created, error: createError } = await supabase.from("shipping_staff")
       .insert({
@@ -84,6 +89,7 @@ export async function POST(request: NextRequest) {
   });
   const response = NextResponse.json({
     success: true,
+    destination: "/dashboard",
     user: {
       id: user.id, email: user.email,
       name: `${user.first_name || ""} ${user.last_name || ""}`.trim(),
@@ -93,5 +99,6 @@ export async function POST(request: NextRequest) {
   response.cookies.set("peeap_shipping_token", session, {
     httpOnly: true, secure: true, sameSite: "lax", path: "/", maxAge: 7 * 24 * 60 * 60,
   });
+  response.cookies.delete("peeap_shipping_customer_token");
   return response;
 }

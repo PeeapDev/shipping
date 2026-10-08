@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-async function validShippingSession(token: string | undefined): Promise<boolean> {
+async function validShippingSession(token: string | undefined, role: "staff" | "customer"): Promise<boolean> {
   const secret = process.env.SHIPPING_TOKEN_SECRET || process.env.SERVICE_SECRET;
   if (!secret || !token?.startsWith("shp_")) return false;
   const raw = token.slice(4);
@@ -15,7 +15,7 @@ async function validShippingSession(token: string | undefined): Promise<boolean>
     const bytes = Uint8Array.from(Buffer.from(signature, "base64url"));
     if (!await crypto.subtle.verify("HMAC", key, bytes, new TextEncoder().encode(encoded))) return false;
     const payload = JSON.parse(Buffer.from(encoded, "base64url").toString());
-    return typeof payload.sub === "string" && typeof payload.exp === "number" && payload.exp > Date.now();
+    return typeof payload.sub === "string" && typeof payload.exp === "number" && payload.exp > Date.now() && (role === "customer" ? payload.role === "customer" : payload.role !== "customer");
   } catch {
     return false;
   }
@@ -23,7 +23,8 @@ async function validShippingSession(token: string | undefined): Promise<boolean>
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  const valid = await validShippingSession(request.cookies.get("peeap_shipping_token")?.value);
+  const valid = await validShippingSession(request.cookies.get("peeap_shipping_token")?.value, "staff");
+  const customerValid = await validShippingSession(request.cookies.get("peeap_shipping_customer_token")?.value, "customer");
   if (pathname.startsWith("/dashboard") && !valid) {
     const loginUrl = new URL("/login", request.url);
     loginUrl.searchParams.set("redirect", pathname);
@@ -32,7 +33,9 @@ export async function middleware(request: NextRequest) {
     return response;
   }
   if (pathname === "/login" && valid) return NextResponse.redirect(new URL("/dashboard", request.url));
+  if (pathname === "/login" && customerValid) return NextResponse.redirect(new URL("/my-orders", request.url));
+  if (pathname.startsWith("/my-orders") && !customerValid) return NextResponse.redirect(new URL("/login?redirect=%2Fmy-orders", request.url));
   return NextResponse.next();
 }
 
-export const config = { matcher: ["/dashboard/:path*", "/login"] };
+export const config = { matcher: ["/dashboard/:path*", "/my-orders/:path*", "/login"] };

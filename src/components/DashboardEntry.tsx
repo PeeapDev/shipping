@@ -20,6 +20,12 @@ export function DashboardEntry({ children, className }: { children: React.ReactN
         router.refresh();
         return;
       }
+      const customerResponse = await fetch("/api/customer/orders?limit=1", { credentials: "same-origin", cache: "no-store" });
+      if (customerResponse.ok) {
+        router.push("/my-orders");
+        router.refresh();
+        return;
+      }
     } catch {
       // The session exchange will independently check authorization.
     } finally {
