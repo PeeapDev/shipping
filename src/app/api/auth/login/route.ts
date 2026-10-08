@@ -7,7 +7,7 @@ import { createShippingToken } from "@/lib/shipping-auth";
 
 // Main Peeap Supabase for user authentication
 const MAIN_SUPABASE_URL = process.env.MAIN_SUPABASE_URL || "https://akiecgwcxadcpqlvntmf.supabase.co";
-const MAIN_SUPABASE_KEY = process.env.MAIN_SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+const MAIN_SUPABASE_KEY = process.env.MAIN_SUPABASE_SERVICE_KEY || "";
 
 function getMainSupabase() {
   return createClient(MAIN_SUPABASE_URL, MAIN_SUPABASE_KEY, { auth: { persistSession: false } });
@@ -32,24 +32,49 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Email and password are required" }, { status: 400, headers });
     }
 
+    if (!MAIN_SUPABASE_KEY) {
+      console.error("[Auth Login] MAIN_SUPABASE_SERVICE_KEY is not configured");
+      return NextResponse.json({ error: "Shipping sign-in is temporarily unavailable" }, { status: 503, headers });
+    }
+
     const mainDb = getMainSupabase();
 
     // Find user by email in main Peeap DB
-    const { data: users } = await mainDb
+    const { data: users, error: userLookupError } = await mainDb
       .from("users")
       .select("id, email, password_hash, first_name, last_name, phone, roles, profile_picture")
-      .eq("email", email.toLowerCase())
+      .eq("email", String(email).trim().toLowerCase())
       .limit(1);
+
+    if (userLookupError) {
+      console.error("[Auth Login] Main account lookup failed:", userLookupError.code);
+      return NextResponse.json({ error: "Shipping sign-in is temporarily unavailable" }, { status: 503, headers });
+    }
 
     const user = users?.[0];
     if (!user) {
       return NextResponse.json({ error: "Invalid email or password" }, { status: 401, headers });
     }
 
-    // Verify password (bcrypt only — no plaintext fallback)
+    // Match the main Peeap login: older accounts may still have a legacy
+    // plaintext password. Upgrade that record to bcrypt on successful login.
     let passwordValid = false;
-    if (user.password_hash) {
-      passwordValid = await bcrypt.compare(password, user.password_hash);
+    const hash = String(user.password_hash || "");
+    if (/^\$2[aby]\$/.test(hash)) {
+      passwordValid = await bcrypt.compare(password, hash);
+    } else if (hash && !hash.startsWith("$argon2")) {
+      passwordValid = hash === password;
+      if (passwordValid) {
+        const upgradedHash = await bcrypt.hash(password, 12);
+        const { error: upgradeError } = await mainDb.from("users")
+          .update({ password_hash: upgradedHash })
+          .eq("id", user.id)
+          .eq("password_hash", hash);
+        if (upgradeError) {
+          console.error("[Auth Login] Password upgrade failed:", upgradeError.code);
+          return NextResponse.json({ error: "Shipping sign-in is temporarily unavailable" }, { status: 503, headers });
+        }
+      }
     }
 
     if (!passwordValid) {
@@ -57,15 +82,19 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if user is in shipping_staff table
-    const { data: staffRecord } = await supabase
+    const { data: staffRecord, error: staffLookupError } = await supabase
       .from("shipping_staff")
       .select("*")
       .eq("user_id", user.id)
       .maybeSingle();
 
+    if (staffLookupError) {
+      console.error("[Auth Login] Shipping staff lookup failed:", staffLookupError.code);
+      return NextResponse.json({ error: "Shipping sign-in is temporarily unavailable" }, { status: 503, headers });
+    }
+
     // Auto-add as admin if they're a superadmin/admin in main system
     let staffRole = staffRecord?.role || "dispatcher";
-    let isStaff = !!staffRecord?.is_active;
 
     // Shipping superadmin emails — auto-register as admin
     const SHIPPING_ADMINS = ["dev@school.edu.sl"];
@@ -76,7 +105,7 @@ export async function POST(request: NextRequest) {
 
     if (!staffRecord && (isMainAdmin || isShippingAdmin)) {
       // Auto-register admins as shipping admins
-      const { data: newStaff } = await supabase
+      const { data: newStaff, error: staffCreateError } = await supabase
         .from("shipping_staff")
         .insert({
           user_id: user.id,
@@ -90,8 +119,11 @@ export async function POST(request: NextRequest) {
         .select()
         .single();
 
-      staffRole = "admin";
-      isStaff = true;
+      if (staffCreateError || !newStaff) {
+        console.error("[Auth Login] Shipping staff registration failed:", staffCreateError?.code);
+        return NextResponse.json({ error: "Shipping sign-in is temporarily unavailable" }, { status: 503, headers });
+      }
+      staffRole = newStaff.role;
     } else if (!staffRecord) {
       return NextResponse.json({ error: "You don't have access to the shipping dashboard. Contact an admin." }, { status: 403, headers });
     } else if (!staffRecord.is_active) {
