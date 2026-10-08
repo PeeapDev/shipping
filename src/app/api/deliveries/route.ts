@@ -95,8 +95,13 @@ export async function GET(request: NextRequest) {
     const { data, error, count } = await query;
     if (error) throw error;
 
+    const deliveries = (data || []).map((job) => isStaff ? job : {
+      ...job,
+      pickup_code: role === "merchant" ? job.pickup_code : undefined,
+      delivery_code: role === "customer" ? job.delivery_code : undefined,
+    });
     return NextResponse.json(
-      { deliveries: data || [], total: count || 0 },
+      { deliveries, total: count || 0 },
       { headers }
     );
   } catch (err) {
@@ -135,6 +140,27 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (auth && parsed.data.merchant_id !== auth.sub) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403, headers });
+    }
+
+    // A payment transaction creates at most one delivery. A retry after a
+    // timeout must return the existing job and its actual handoff codes.
+    if (parsed.data.transaction_id) {
+      const { data: existing, error: existingError } = await supabase
+        .from("delivery_jobs").select("*")
+        .eq("transaction_id", parsed.data.transaction_id).maybeSingle();
+      if (existingError) throw existingError;
+      if (existing) {
+        if (existing.merchant_id !== parsed.data.merchant_id || existing.customer_id !== parsed.data.customer_id) {
+          return NextResponse.json({ error: "Transaction delivery ownership mismatch" }, { status: 409, headers });
+        }
+        return NextResponse.json({ delivery: isServiceCall || shippingStaff ? existing : { ...existing, delivery_code: undefined }, job_number: existing.job_number,
+          pickup_code: existing.pickup_code,
+          ...(isServiceCall || shippingStaff ? { delivery_code: existing.delivery_code } : {}) }, { headers });
+      }
+    }
+
     // Generate job number: SHP-YYYYMMDD-XXXXXX (6 crypto-random alphanumeric)
     const now = new Date();
     const dateStr = now.toISOString().slice(0, 10).replace(/-/g, "");
@@ -164,7 +190,18 @@ export async function POST(request: NextRequest) {
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      if (error.code === "23505" && parsed.data.transaction_id) {
+        const { data: existing } = await supabase.from("delivery_jobs").select("*")
+          .eq("transaction_id", parsed.data.transaction_id).maybeSingle();
+        if (existing && existing.merchant_id === parsed.data.merchant_id && existing.customer_id === parsed.data.customer_id) {
+          return NextResponse.json({ delivery: isServiceCall || shippingStaff ? existing : { ...existing, delivery_code: undefined }, job_number: existing.job_number,
+            pickup_code: existing.pickup_code,
+            ...(isServiceCall || shippingStaff ? { delivery_code: existing.delivery_code } : {}) }, { headers });
+        }
+      }
+      throw error;
+    }
 
     // Create initial tracking update
     await supabase.from("tracking_updates").insert({
@@ -309,7 +346,9 @@ export async function POST(request: NextRequest) {
     } catch { /* non-critical */ }
 
     return NextResponse.json(
-      { delivery: data, job_number: jobNumber, pickup_code: pickupCode, delivery_code: deliveryCode, company_user_id: companyUserId },
+      { delivery: isServiceCall || shippingStaff ? data : { ...data, delivery_code: undefined }, job_number: jobNumber, pickup_code: pickupCode,
+        ...(isServiceCall || shippingStaff ? { delivery_code: deliveryCode } : {}),
+        company_user_id: companyUserId },
       { status: 201, headers }
     );
   } catch (err) {

@@ -80,7 +80,12 @@ export async function GET(
       );
     }
 
-    return NextResponse.json({ delivery }, { headers });
+    const visibleDelivery = shippingAuth ? delivery : {
+      ...delivery,
+      pickup_code: delivery.merchant_id === auth.sub ? delivery.pickup_code : undefined,
+      delivery_code: delivery.customer_id === auth.sub ? delivery.delivery_code : undefined,
+    };
+    return NextResponse.json({ delivery: visibleDelivery }, { headers });
   } catch (err) {
     console.error("Error fetching delivery:", err);
     return NextResponse.json(

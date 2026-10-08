@@ -5,6 +5,7 @@
  */
 
 import { retryFetch } from "./retry-fetch";
+import { supabase } from "./supabase";
 
 const MAIN_API = process.env.MAIN_API_URL || "https://api.peeap.com";
 const STORE_API = process.env.STORE_API_URL || "https://store.peeap.com";
@@ -15,35 +16,36 @@ const SERVICE_SECRET = process.env.SERVICE_SECRET || "";
  * Main API: updates transaction status on my.peeap.com
  * POS API: updates store_orders status on store.peeap.com
  */
-export function notifyStatusChange(params: {
+export async function notifyStatusChange(params: {
   job_number: string;
   store_order_id?: string | null;
   new_status: string;
   pickup_verified?: boolean;
   delivery_verified?: boolean;
-}): void {
+}): Promise<void> {
   if (!SERVICE_SECRET) return;
-
-  const payload = {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Service-Secret": SERVICE_SECRET,
-    },
-    body: JSON.stringify(params),
-  };
-
-  // Notify main API (my.peeap.com / api.peeap.com)
-  retryFetch(
-    `${MAIN_API}/api/shipping/status-update`,
-    payload,
-    { label: `webhook:main_${params.new_status}` }
-  );
-
-  // Notify POS (store.peeap.com) — keeps store_orders in sync
-  retryFetch(
-    `${STORE_API}/api/shipping/status-update`,
-    payload,
-    { label: `webhook:pos_${params.new_status}` }
-  );
+  {
+    const { data: job, error } = await supabase.from("delivery_jobs")
+      .select("transaction_id, store_order_id")
+      .eq("job_number", params.job_number).maybeSingle();
+    if (error) {
+      console.error("[ShippingStatus] Could not resolve transaction:", error);
+      return;
+    }
+    const payload = {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Service-Secret": SERVICE_SECRET,
+      },
+      body: JSON.stringify({ ...params, transaction_id: job?.transaction_id || null,
+        store_order_id: job?.store_order_id || params.store_order_id || null }),
+    };
+    await Promise.all([
+      retryFetch(`${MAIN_API}/api/shipping/status-update`, payload,
+        { label: `webhook:main_${params.new_status}` }),
+      retryFetch(`${STORE_API}/api/shipping/status-update`, payload,
+        { label: `webhook:pos_${params.new_status}` }),
+    ]);
+  }
 }

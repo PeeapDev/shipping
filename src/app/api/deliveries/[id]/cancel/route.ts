@@ -91,7 +91,7 @@ export async function POST(
     }
 
     // Notify main API
-    notifyStatusChange({
+    await notifyStatusChange({
       job_number: existing.job_number,
       store_order_id: (existing.metadata as Record<string, string>)?.order_number,
       new_status: "cancelled",

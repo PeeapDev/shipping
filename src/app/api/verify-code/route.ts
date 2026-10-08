@@ -146,7 +146,7 @@ export async function POST(request: NextRequest) {
       ]);
 
       // Notify main API
-      notifyStatusChange({
+    await notifyStatusChange({
         job_number: pickupMatch.job_number,
         store_order_id: pickupMatch.store_order_id,
         new_status: "in_transit",
@@ -162,7 +162,7 @@ export async function POST(request: NextRequest) {
       const SERVICE_SECRET = process.env.SERVICE_SECRET || "";
 
       // Vendor message: "Product received, will be delivered to [buyer]"
-      fetch(`${CHAT_API}/api/ecommerce/messages`, {
+    await fetch(`${CHAT_API}/api/ecommerce/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-Service-Secret": SERVICE_SECRET },
         body: JSON.stringify({
@@ -184,7 +184,7 @@ export async function POST(request: NextRequest) {
       }).catch(() => {});
 
       // Buyer message: "Be ready to receive your product"
-      fetch(`${CHAT_API}/api/ecommerce/messages`, {
+    await fetch(`${CHAT_API}/api/ecommerce/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-Service-Secret": SERVICE_SECRET },
         body: JSON.stringify({
@@ -355,7 +355,7 @@ export async function POST(request: NextRequest) {
       }
 
       // Notify main API
-      notifyStatusChange({
+      await notifyStatusChange({
         job_number: deliveryMatch.job_number,
         store_order_id: deliveryMatch.store_order_id,
         new_status: "completed",
@@ -371,7 +371,7 @@ export async function POST(request: NextRequest) {
       const MAIN_API_URL = process.env.MAIN_API_URL || "https://api.peeap.com";
 
       // Vendor: "Product delivered"
-      fetch(`${CHAT_API}/api/ecommerce/messages`, {
+    await fetch(`${CHAT_API}/api/ecommerce/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-Service-Secret": SVC_SECRET },
         body: JSON.stringify({
@@ -385,7 +385,7 @@ export async function POST(request: NextRequest) {
       }).catch(() => {});
 
       // Buyer: "Delivered — rate your experience"
-      fetch(`${CHAT_API}/api/ecommerce/messages`, {
+    await fetch(`${CHAT_API}/api/ecommerce/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-Service-Secret": SVC_SECRET },
         body: JSON.stringify({
@@ -575,7 +575,7 @@ async function handleDeliveryConfirmation(params: {
   }
 
   // Notify main API
-  notifyStatusChange({
+  await notifyStatusChange({
     job_number: job.job_number,
     store_order_id: job.store_order_id,
     new_status: "completed",
@@ -590,7 +590,7 @@ async function handleDeliveryConfirmation(params: {
   const MAIN_API = process.env.MAIN_API_URL || "https://api.peeap.com";
 
   // Vendor: "Product delivered"
-  fetch(`${CHAT_API}/api/ecommerce/messages`, {
+    await fetch(`${CHAT_API}/api/ecommerce/messages`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-Service-Secret": SERVICE_SECRET },
     body: JSON.stringify({
@@ -606,7 +606,7 @@ async function handleDeliveryConfirmation(params: {
   }).catch(() => {});
 
   // Buyer: "Delivered — rate your experience"
-  fetch(`${CHAT_API}/api/ecommerce/messages`, {
+    await fetch(`${CHAT_API}/api/ecommerce/messages`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-Service-Secret": SERVICE_SECRET },
     body: JSON.stringify({

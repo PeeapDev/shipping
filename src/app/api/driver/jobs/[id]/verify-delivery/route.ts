@@ -269,7 +269,7 @@ export async function POST(
     const SERVICE_SECRET = process.env.SERVICE_SECRET || "";
 
     // 1. Buyer: "Delivery complete! Rate your driver."
-    fetch(`${CHAT_API}/api/ecommerce/messages`, {
+    await fetch(`${CHAT_API}/api/ecommerce/messages`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Service-Secret": SERVICE_SECRET },
       body: JSON.stringify({
@@ -292,7 +292,7 @@ export async function POST(
     }).catch(() => {});
 
     // 2. Vendor: "Order delivered to customer"
-    fetch(`${CHAT_API}/api/ecommerce/messages`, {
+    await fetch(`${CHAT_API}/api/ecommerce/messages`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Service-Secret": SERVICE_SECRET },
       body: JSON.stringify({
@@ -308,7 +308,7 @@ export async function POST(
     }).catch(() => {});
 
     // Notify main API about delivery completion
-    notifyStatusChange({
+    await notifyStatusChange({
       job_number: job.job_number,
       store_order_id: (job as any).store_order_id,
       new_status: "completed",

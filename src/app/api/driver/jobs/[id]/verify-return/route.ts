@@ -108,7 +108,7 @@ export async function POST(
       });
 
       // Notify vendor: "Rider is returning the package. Return code: XXXX"
-      fetch(`${CHAT_API}/api/ecommerce/messages`, {
+    await fetch(`${CHAT_API}/api/ecommerce/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-Service-Secret": SERVICE_SECRET },
         body: JSON.stringify({
@@ -124,7 +124,7 @@ export async function POST(
       }).catch(() => {});
 
       // Notify buyer: "Your package is being returned to the store"
-      fetch(`${CHAT_API}/api/ecommerce/messages`, {
+    await fetch(`${CHAT_API}/api/ecommerce/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-Service-Secret": SERVICE_SECRET },
         body: JSON.stringify({
@@ -240,7 +240,7 @@ export async function POST(
     // ── 3-party notifications ──
 
     // Vendor: "Package returned, code verified"
-    fetch(`${CHAT_API}/api/ecommerce/messages`, {
+    await fetch(`${CHAT_API}/api/ecommerce/messages`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Service-Secret": SERVICE_SECRET },
       body: JSON.stringify({
@@ -256,7 +256,7 @@ export async function POST(
     }).catch(() => {});
 
     // Buyer: "Package returned, refund coming"
-    fetch(`${CHAT_API}/api/ecommerce/messages`, {
+    await fetch(`${CHAT_API}/api/ecommerce/messages`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Service-Secret": SERVICE_SECRET },
       body: JSON.stringify({
