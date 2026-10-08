@@ -41,9 +41,13 @@ export async function POST(request: NextRequest) {
   }
 
   const { data: user, error: userError } = await mainDb.from("users")
-    .select("id, email, first_name, last_name, phone, roles, profile_picture, is_active")
+    .select("id, email, first_name, last_name, phone, roles, profile_picture, status")
     .eq("id", handoff.user_id).maybeSingle();
-  if (userError || !user || user.is_active === false) {
+  if (userError) {
+    console.error("[shipping auth] Main database rejected the user lookup:", userError.code);
+    return NextResponse.json({ error: "Shipping sign-in is temporarily unavailable. Please try again shortly." }, { status: 503 });
+  }
+  if (!user || String(user.status || "").toUpperCase() !== "ACTIVE") {
     return NextResponse.json({ error: "Account unavailable" }, { status: 403 });
   }
 

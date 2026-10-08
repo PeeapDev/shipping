@@ -13,8 +13,9 @@ export async function GET(request: NextRequest) {
   if (!mainKey) return NextResponse.json({ error: "Order history is temporarily unavailable" }, { status: 503 });
 
   const mainDb = createClient(mainUrl, mainKey, { auth: { persistSession: false } });
-  const { data: user, error: userError } = await mainDb.from("users").select("id, is_active").eq("id", session.sub).maybeSingle();
-  if (userError || !user || user.is_active === false) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const { data: user, error: userError } = await mainDb.from("users").select("id, status").eq("id", session.sub).maybeSingle();
+  if (userError) return NextResponse.json({ error: "Account check unavailable" }, { status: 503 });
+  if (!user || String(user.status || "").toUpperCase() !== "ACTIVE") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const requestedLimit = Number(new URL(request.url).searchParams.get("limit") || 30);
   const limit = Number.isFinite(requestedLimit) ? Math.min(50, Math.max(1, Math.trunc(requestedLimit))) : 30;
