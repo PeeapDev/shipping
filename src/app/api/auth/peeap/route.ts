@@ -32,7 +32,11 @@ export async function POST(request: NextRequest) {
     .gt("expires_at", now)
     .select("user_id")
     .maybeSingle();
-  if (consumeError || !handoff) {
+  if (consumeError) {
+    console.error("[shipping auth] Main database rejected the SSO exchange:", consumeError.code);
+    return NextResponse.json({ error: "Shipping sign-in is temporarily unavailable. Please try again shortly." }, { status: 503 });
+  }
+  if (!handoff) {
     return NextResponse.json({ error: "Sign-in request expired. Try again." }, { status: 401 });
   }
 
