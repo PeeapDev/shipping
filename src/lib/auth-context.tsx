@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { clearShippingSession, EXPLICIT_LOGIN_KEY, SHIPPING_AUTH_CHANGED, SHIPPING_AUTH_CLEARED } from "@/lib/auth-client";
 
 interface ShippingUser {
   id: string;
@@ -14,10 +15,10 @@ interface ShippingUser {
 interface AuthContextType {
   user: ShippingUser | null;
   loading: boolean;
-  logout: () => void;
+  logout: () => Promise<void>;
 }
 
-const AuthContext = createContext<AuthContextType>({ user: null, loading: true, logout: () => {} });
+const AuthContext = createContext<AuthContextType>({ user: null, loading: true, logout: async () => {} });
 
 export function useAuth() { return useContext(AuthContext); }
 
@@ -28,21 +29,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let active = true;
-    fetch("/api/auth/me", { credentials: "same-origin", cache: "no-store" })
-      .then(async (response) => response.ok ? (await response.json()).user as ShippingUser : null)
-      .then((currentUser) => { if (active) setUser(currentUser); })
-      .catch(() => { if (active) setUser(null); })
-      .finally(() => { if (active) setLoading(false); });
-    return () => { active = false; };
+    let generation = 0;
+    const loadUser = async () => {
+      const current = ++generation;
+      setLoading(true);
+      try {
+        const response = await fetch("/api/auth/me", { credentials: "same-origin", cache: "no-store" });
+        const currentUser = response.ok ? (await response.json()).user as ShippingUser : null;
+        if (active && current === generation) setUser(currentUser);
+      } catch { if (active && current === generation) setUser(null); }
+      finally { if (active && current === generation) setLoading(false); }
+    };
+    const clearUser = () => { ++generation; setUser(null); setLoading(false); };
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== EXPLICIT_LOGIN_KEY) return;
+      if (event.newValue === "true") clearUser();
+      else void loadUser();
+    };
+    void loadUser();
+    window.addEventListener(SHIPPING_AUTH_CLEARED, clearUser);
+    window.addEventListener(SHIPPING_AUTH_CHANGED, loadUser);
+    window.addEventListener("storage", onStorage);
+    return () => {
+      active = false;
+      ++generation;
+      window.removeEventListener(SHIPPING_AUTH_CLEARED, clearUser);
+      window.removeEventListener(SHIPPING_AUTH_CHANGED, loadUser);
+      window.removeEventListener("storage", onStorage);
+    };
   }, []);
 
-  function logout() {
-    fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" })
-      .finally(() => {
-        setUser(null);
-        router.push("/login");
-        router.refresh();
-      });
+  async function logout() {
+    await clearShippingSession();
+    router.replace("/");
+    router.refresh();
   }
 
   return <AuthContext.Provider value={{ user, loading, logout }}>{children}</AuthContext.Provider>;

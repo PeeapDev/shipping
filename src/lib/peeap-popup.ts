@@ -1,11 +1,8 @@
-const PEEAP_ORIGIN = "https://my.peeap.com";
+import { peeapSignInUrl } from "@/lib/auth-client";
 
 /** Open a fresh, centered auth window while keeping the shipping page in place. */
-export function openPeeapSignIn(): Window | null {
-  const url = new URL("/auth/signin", PEEAP_ORIGIN);
-  url.searchParams.set("mode", "popup");
-  url.searchParams.set("origin", window.location.origin);
-  url.searchParams.set("targetApp", "shipping");
+export function openPeeapSignIn(forceLogin = false): Window | null {
+  const url = peeapSignInUrl("popup", forceLogin);
 
   const width = 480;
   const height = 720;
@@ -15,7 +12,7 @@ export function openPeeapSignIn(): Window | null {
 
   // _blank avoids reusing a previous named browser tab. The URL is opened
   // synchronously from the click so the browser can treat it as a user popup.
-  const popup = window.open(url.toString(), "_blank", features);
+  const popup = window.open(url, "_blank", features);
   popup?.focus();
   return popup;
 }

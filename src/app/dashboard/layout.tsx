@@ -15,13 +15,13 @@ import {
   ChevronLeft,
   Menu,
   X,
-  LogOut,
   User,
   MessageSquare,
   ScanLine,
 } from "lucide-react";
 import { useState } from "react";
 import { AuthProvider, useAuth } from "@/lib/auth-context";
+import { AccountActions } from "@/components/AccountActions";
 
 const navItems = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
@@ -41,7 +41,7 @@ const navItems = [
 function DashboardShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const { user, logout } = useAuth();
+  const { user, loading } = useAuth();
 
   return (
     <div className="min-h-screen flex">
@@ -121,15 +121,9 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
                   {user.role}
                 </div>
               </div>
-              <button
-                onClick={logout}
-                title="Sign out"
-                className="text-gray-400 hover:text-red-500 transition-colors"
-              >
-                <LogOut className="h-4 w-4" />
-              </button>
             </div>
           )}
+          <AccountActions />
           <Link
             href="/"
             className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700"
@@ -183,7 +177,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
           </div>
         </div>
 
-        <div className="p-4 md:p-6 lg:p-8">{children}</div>
+        <div className="p-4 md:p-6 lg:p-8">{loading ? <p role="status" className="text-gray-500">Checking your shipping account…</p> : user ? children : <section className="rounded-xl border bg-white p-6"><h1 className="text-xl font-semibold">Signed out of shipping</h1><p className="mt-2 text-gray-600">Use Switch account in the menu to sign in with a different Peeap account. Staff access is checked after sign-in.</p></section>}</div>
       </main>
     </div>
   );
