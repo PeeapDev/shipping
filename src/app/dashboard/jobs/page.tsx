@@ -7,6 +7,7 @@ import {
   ChevronRight, Copy, CheckCircle, AlertTriangle,
 } from "lucide-react";
 import type { DeliveryJob } from "@/types/shipping";
+import { shippingFeeLabel, shippingPaymentSnapshot } from "@/lib/shipping-payment-snapshot";
 
 const statusColors: Record<string, string> = {
   pending: "bg-yellow-100 text-yellow-700",
@@ -203,6 +204,7 @@ export default function AllJobsPage() {
     j.customer_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
     j.merchant_name?.toLowerCase().includes(searchQuery.toLowerCase())
   );
+  const paymentSnapshot = selectedJob ? shippingPaymentSnapshot(selectedJob) : null;
 
   if (loading) {
     return (
@@ -285,7 +287,7 @@ export default function AllJobsPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
-                    <span className="text-sm font-medium text-gray-900">Le {(job.shipping_fee || 0).toFixed(0)}</span>
+                    <span className="text-sm font-medium text-gray-900">{shippingFeeLabel(job.shipping_fee)}</span>
                     <ChevronRight className="h-4 w-4 text-gray-400" />
                   </div>
                 </div>
@@ -384,10 +386,29 @@ export default function AllJobsPage() {
 
             {/* Fee breakdown */}
             <div className="bg-gray-50 rounded-lg p-3 mb-4 space-y-1 text-sm">
-              <div className="flex justify-between"><span className="text-gray-500">Shipping Fee</span><span className="font-medium">Le {(selectedJob.shipping_fee || 0).toFixed(0)}</span></div>
-              {selectedJob.driver_payout > 0 && <div className="flex justify-between"><span className="text-gray-500">Driver Payout</span><span>Le {selectedJob.driver_payout.toFixed(0)}</span></div>}
-              {selectedJob.platform_fee > 0 && <div className="flex justify-between"><span className="text-gray-500">Platform Fee</span><span>Le {selectedJob.platform_fee.toFixed(0)}</span></div>}
+              <div className="flex justify-between"><span className="text-gray-500">Shipping Fee</span><span className="font-medium">{shippingFeeLabel(selectedJob.shipping_fee)}</span></div>
+              {selectedJob.driver_payout > 0 && <div className="flex justify-between"><span className="text-gray-500">Driver Payout</span><span>{shippingFeeLabel(selectedJob.driver_payout)}</span></div>}
+              {selectedJob.platform_fee > 0 && <div className="flex justify-between"><span className="text-gray-500">Platform Fee</span><span>{shippingFeeLabel(selectedJob.platform_fee)}</span></div>}
             </div>
+
+            {/* Frozen checkout evidence, not a current wallet/ledger assertion. */}
+            {paymentSnapshot && (
+              <div className="rounded-lg border border-gray-200 p-3 mb-4 space-y-2 text-sm">
+                <h3 className="font-semibold text-gray-900">Checkout payment snapshot</h3>
+                {paymentSnapshot.breakdown ? (
+                  <div className="space-y-1">
+                    <div className="flex justify-between"><span className="text-gray-500">Products</span><span>{shippingFeeLabel(paymentSnapshot.breakdown.products)}</span></div>
+                    <div className="flex justify-between"><span className="text-gray-500">Shipping</span><span>{shippingFeeLabel(paymentSnapshot.breakdown.shipping)}</span></div>
+                    <div className="flex justify-between border-t border-gray-100 pt-1 font-semibold"><span>Buyer charged</span><span>{shippingFeeLabel(paymentSnapshot.breakdown.buyerCharged)}</span></div>
+                  </div>
+                ) : <p className="text-xs text-amber-700">Payment breakdown unavailable or inconsistent. Reconciliation is required.</p>}
+                <p className={`text-xs font-medium ${paymentSnapshot.creditState === "recorded_at_checkout" || paymentSnapshot.creditState === "no_credit_required" ? "text-green-700" : "text-amber-700"}`}>{paymentSnapshot.creditLabel}</p>
+                {paymentSnapshot.creditTransactionId && <div className="text-xs"><span className="text-gray-500">Credit reference: </span><span className="font-mono break-all">{paymentSnapshot.creditTransactionId}</span></div>}
+                {paymentSnapshot.companyUserId && <div className="text-xs"><span className="text-gray-500">Recorded company receiver: </span><span className="font-mono break-all">{paymentSnapshot.companyUserId}</span></div>}
+                {paymentSnapshot.walletId && <div className="text-xs"><span className="text-gray-500">Recorded receiving wallet: </span><span className="font-mono break-all">{paymentSnapshot.walletId}</span></div>}
+                <p className="text-xs text-gray-500">Checkout evidence only. This is not a current wallet balance or confirmation of later credits, reversals or refunds.</p>
+              </div>
+            )}
 
             {/* Tracking timeline */}
             {selectedJob.tracking_updates && selectedJob.tracking_updates.length > 0 && (
