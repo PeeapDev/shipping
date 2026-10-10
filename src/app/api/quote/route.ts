@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { corsHeaders, handleCORS } from "@/lib/cors";
 import { supabase } from "@/lib/supabase";
 import { quoteRequestSchema } from "@/lib/validation";
+import { cityFilterSchema, isFlatZone } from "@/lib/zone-pricing";
 
 export async function OPTIONS(request: NextRequest) {
   return handleCORS(request) || NextResponse.json({});
@@ -75,12 +76,37 @@ export async function POST(request: NextRequest) {
     }
 
     const { pickup_city, delivery_city, package_size, pickup_lat, pickup_lng, delivery_lat, delivery_lng } = parsed.data;
+    if (!cityFilterSchema.safeParse(pickup_city).success || !cityFilterSchema.safeParse(delivery_city).success) {
+      return NextResponse.json({ error: "invalid_city" }, { status: 400, headers });
+    }
 
-    // Look up delivery zones for both cities
-    const [{ data: pickupZone }, { data: deliveryZone }] = await Promise.all([
-      supabase.from("delivery_zones").select("*").ilike("city", `%${pickup_city}%`).eq("is_active", true).limit(1).single(),
-      supabase.from("delivery_zones").select("*").ilike("city", `%${delivery_city}%`).eq("is_active", true).limit(1).single(),
+    // Exact city matches only. Picking an arbitrary zone or inventing a
+    // fallback rate must not silently change what a customer pays.
+    const [pickupResult, deliveryResult] = await Promise.all([
+      supabase.from("delivery_zones").select("*").ilike("city", pickup_city.trim()).eq("is_active", true).limit(2),
+      supabase.from("delivery_zones").select("*").ilike("city", delivery_city.trim()).eq("is_active", true).limit(2),
     ]);
+    if (pickupResult.error || deliveryResult.error) throw new Error("zone_lookup_failed");
+    if ((pickupResult.data || []).length > 1 || (deliveryResult.data || []).length > 1) {
+      return NextResponse.json({ error: "ambiguous_shipping_zone", error_description: "More than one active rate matches this city. Contact shipping support." }, { status: 409, headers });
+    }
+    const pickupZone = pickupResult.data?.[0];
+    const deliveryZone = deliveryResult.data?.[0];
+    if (!pickupZone || !deliveryZone) {
+      return NextResponse.json({ error: "shipping_route_not_covered" }, { status: 409, headers });
+    }
+    const sameCity = pickup_city.trim().toLowerCase() === delivery_city.trim().toLowerCase();
+    if (isFlatZone(pickupZone) || isFlatZone(deliveryZone)) {
+      // A city's flat rate covers deliveries WITHIN that city. Cross-city
+      // prices require an explicit business rule, not a guessed multiplier.
+      if (!sameCity) return NextResponse.json({ error: "flat_cross_city_rate_not_configured" }, { status: 409, headers });
+      return NextResponse.json({ quote: {
+        fee: Number(deliveryZone.base_fee), estimated_time_minutes: deliveryZone.estimated_time_minutes,
+        distance_km: null, pickup_zone: pickupZone.name, delivery_zone: deliveryZone.name,
+        pricing_method: "city_flat", breakdown: { base_fee: Number(deliveryZone.base_fee), per_km_fee: 0, size_multiplier: 1,
+          min_fee: Number(deliveryZone.base_fee), max_fee: Number(deliveryZone.base_fee) },
+      } }, { headers });
+    }
 
     // Size multiplier
     const sizeMultipliers: Record<string, number> = {
@@ -107,10 +133,13 @@ export async function POST(request: NextRequest) {
 
     // ── Calculate fee ──
     const zone = pickupZone || deliveryZone;
-    const baseFee = zone ? parseFloat(String(zone.base_fee)) || 10 : 10;
-    const perKmFee = zone ? parseFloat(String(zone.per_km_fee)) || 2 : 2;
-    const minFee = zone ? parseFloat(String(zone.min_fee)) || 5 : 5;
-    const maxFee = zone ? parseFloat(String(zone.max_fee)) || 500 : 500;
+    const baseFee = Number(zone.base_fee);
+    const perKmFee = Number(zone.per_km_fee);
+    const minFee = Number(zone.min_fee);
+    const maxFee = Number(zone.max_fee);
+    if (![baseFee, perKmFee, minFee, maxFee].every((value) => Number.isFinite(value) && value >= 0) || minFee > maxFee) {
+      throw new Error("invalid_zone_pricing");
+    }
     let estimatedTime = zone ? (zone.estimated_time_minutes || 60) : 60;
 
     let fee: number;

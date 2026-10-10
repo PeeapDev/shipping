@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import {
   Package, MapPin, ArrowRight, Clock, Search, X, Truck, Phone, User,
   ChevronRight, Copy, CheckCircle, AlertTriangle,
@@ -215,7 +216,7 @@ export default function AllJobsPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-bold text-gray-900">All Jobs</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3"><h1 className="text-2xl font-bold text-gray-900">All Jobs</h1><Link href="/dashboard/zones" className="rounded-lg border border-violet-200 px-4 py-2 text-sm font-semibold text-violet-700 hover:bg-violet-50">Pricing &amp; zones →</Link></div>
 
       {message && (
         <div className={`p-3 rounded-lg text-sm font-medium ${message.type === "success" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>

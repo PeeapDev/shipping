@@ -32,7 +32,7 @@ const navItems = [
   { href: "/dashboard/applications", label: "Applications", icon: FileText },
   { href: "/dashboard/messages", label: "Messages", icon: MessageSquare },
   { href: "/dashboard/disputes", label: "Disputes", icon: FileText },
-  { href: "/dashboard/zones", label: "Zones", icon: Map },
+  { href: "/dashboard/zones", label: "Pricing & zones", icon: Map },
   { href: "/dashboard/staff", label: "Staff", icon: UserCog },
   { href: "/dashboard/analytics", label: "Analytics", icon: List },
   { href: "/dashboard/settings", label: "Settings", icon: Settings },

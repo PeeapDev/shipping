@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabase";
 import { createDeliveryJobSchema } from "@/lib/validation";
 import { sendShippingUpdateToChat } from "@/lib/chat-client";
 import { sendPickupCodeSms, sendDeliveryCodeSms } from "@/lib/sms";
+import { getShippingSettlement, deliverySettlementReply, assertShippingSettlement, SettlementConfigError } from "@/lib/settlement-config";
 
 /** Generate a random 4-digit code (1000-9999) — column is VARCHAR(4) */
 function generateCode(): string {
@@ -156,9 +157,21 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ error: "Transaction delivery ownership mismatch" }, { status: 409, headers });
         }
         return NextResponse.json({ delivery: isServiceCall || shippingStaff ? existing : { ...existing, delivery_code: undefined }, job_number: existing.job_number,
+          ...deliverySettlementReply(existing),
           pickup_code: existing.pickup_code,
           ...(isServiceCall || shippingStaff ? { delivery_code: existing.delivery_code } : {}) }, { headers });
       }
+    }
+
+    // Verify the configured company before creating a new paid-delivery job.
+    // The caller freezes this beneficiary when quoting/charging the purchase.
+    const settlement = parsed.data.shipping_fee > 0 ? await getShippingSettlement() : null;
+    if (settlement) assertShippingSettlement(parsed.data.metadata.shipping_settlement, settlement);
+    const deliveryMetadata: Record<string, unknown> = { ...parsed.data.metadata, shipping_settlement: settlement };
+    if (!isServiceCall) {
+      // A browser/staff-created job cannot certify a Peeap wallet posting.
+      delete deliveryMetadata.shipping_fee_settled;
+      delete deliveryMetadata.shipping_credit_transaction_id;
     }
 
     // Generate job number: SHP-YYYYMMDD-XXXXXX (6 crypto-random alphanumeric)
@@ -177,6 +190,7 @@ export async function POST(request: NextRequest) {
 
     const jobData = {
       ...parsed.data,
+      metadata: deliveryMetadata,
       job_number: jobNumber,
       status: "pending",
       pickup_code: pickupCode,
@@ -196,6 +210,7 @@ export async function POST(request: NextRequest) {
           .eq("transaction_id", parsed.data.transaction_id).maybeSingle();
         if (existing && existing.merchant_id === parsed.data.merchant_id && existing.customer_id === parsed.data.customer_id) {
           return NextResponse.json({ delivery: isServiceCall || shippingStaff ? existing : { ...existing, delivery_code: undefined }, job_number: existing.job_number,
+            ...deliverySettlementReply(existing),
             pickup_code: existing.pickup_code,
             ...(isServiceCall || shippingStaff ? { delivery_code: existing.delivery_code } : {}) }, { headers });
         }
@@ -332,26 +347,16 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Read shipping company user ID from settings (for split payment)
-    let companyUserId: string | null = null;
-    try {
-      const { data: setting } = await supabase
-        .from("shipping_settings")
-        .select("value")
-        .eq("key", "shipping_company_user_id")
-        .single();
-      if (setting?.value) {
-        companyUserId = typeof setting.value === "string" ? setting.value.replace(/"/g, "") : String(setting.value);
-      }
-    } catch { /* non-critical */ }
-
     return NextResponse.json(
       { delivery: isServiceCall || shippingStaff ? data : { ...data, delivery_code: undefined }, job_number: jobNumber, pickup_code: pickupCode,
         ...(isServiceCall || shippingStaff ? { delivery_code: deliveryCode } : {}),
-        company_user_id: companyUserId },
+        ...deliverySettlementReply(data) },
       { status: 201, headers }
     );
   } catch (err) {
+    if (err instanceof SettlementConfigError) {
+      return NextResponse.json({ error: err.code, error_description: err.message }, { status: err.status, headers });
+    }
     console.error("Error creating delivery job:", err);
     return NextResponse.json(
       { error: "Failed to create delivery job" },

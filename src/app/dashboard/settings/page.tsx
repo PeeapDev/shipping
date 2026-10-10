@@ -2,12 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { Save, DollarSign, Target, Building2 } from "lucide-react";
+import Link from "next/link";
 
 function getToken(): string {
   if (typeof document === "undefined") return "";
   const match = document.cookie.match(/(?:^|; )peeap_shipping_token=([^;]*)/);
   return match ? decodeURIComponent(match[1]) : "";
-  return "";
 }
 
 const defaultSettings: Record<string, number> = {
@@ -22,6 +22,8 @@ const defaultSettings: Record<string, number> = {
 export default function SettingsPage() {
   const [settings, setSettings] = useState(defaultSettings);
   const [companyUserId, setCompanyUserId] = useState("");
+  const [settlement, setSettlement] = useState<{ verified: boolean; company_user_id: string | null; wallet_id: string | null; error: string | null } | null>(null);
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
@@ -38,28 +40,31 @@ export default function SettingsPage() {
       if (res.ok) {
         const data = await res.json();
         const s = data.settings || {};
-        setSettings({
-          dispatch_radius_km: parseFloat(s.dispatch_radius_km) || defaultSettings.dispatch_radius_km,
-          offer_timeout_seconds: parseFloat(s.offer_timeout_seconds) || defaultSettings.offer_timeout_seconds,
-          max_dispatch_attempts: parseFloat(s.max_dispatch_attempts) || defaultSettings.max_dispatch_attempts,
-          platform_fee_pct: parseFloat(s.platform_fee_pct) || defaultSettings.platform_fee_pct,
-          driver_payout_pct: parseFloat(s.driver_payout_pct) || defaultSettings.driver_payout_pct,
-          min_driver_rating: parseFloat(s.min_driver_rating) || defaultSettings.min_driver_rating,
-        });
+        setSettings(Object.fromEntries(Object.entries(defaultSettings).map(([key, fallback]) => {
+          let stored = s[key];
+          if (typeof stored === "string") { try { stored = JSON.parse(stored); } catch { /* numeric legacy value below */ } }
+          const value = stored === null || stored === undefined || stored === "" ? NaN : Number(stored);
+          return [key, Number.isFinite(value) ? value : fallback];
+        })));
+        setSettlement(data.settlement || null);
+        setSettingsLoaded(true);
         // Load company owner ID
         if (s.shipping_company_user_id) {
           const uid = String(s.shipping_company_user_id).replace(/"/g, "");
           setCompanyUserId(uid);
         }
-      }
+      } else throw new Error("Could not load shipping settings. Reload before making changes.");
     } catch (err) {
       console.error("Failed to load settings:", err);
+      setSettingsLoaded(false);
+      setMessage({ type: "error", text: "Could not load shipping settings. Reload before making changes." });
     } finally {
       setLoading(false);
     }
   }
 
   async function handleSave() {
+    if (!settingsLoaded || saving) return;
     setSaving(true);
     try {
       const token = getToken();
@@ -79,10 +84,11 @@ export default function SettingsPage() {
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: "Failed" }));
-        throw new Error(err.error);
+        throw new Error(err.error_description || err.error);
       }
 
       setMessage({ type: "success", text: "Settings saved successfully" });
+      await loadSettings();
     } catch (err: any) {
       setMessage({ type: "error", text: err.message || "Failed to save settings" });
     } finally {
@@ -112,7 +118,7 @@ export default function SettingsPage() {
     <div className="space-y-6 max-w-3xl">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
-        <button onClick={handleSave} disabled={saving} className="flex items-center gap-2 bg-violet-600 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-violet-700 disabled:opacity-50">
+        <button onClick={handleSave} disabled={saving || !settingsLoaded} className="flex items-center gap-2 bg-violet-600 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-violet-700 disabled:opacity-50">
           <Save className="h-4 w-4" /> {saving ? "Saving..." : "Save Changes"}
         </button>
       </div>
@@ -122,6 +128,8 @@ export default function SettingsPage() {
           {message.text}
         </div>
       )}
+
+      <Link href="/dashboard/zones" className="block rounded-xl border border-violet-200 bg-violet-50 p-4 text-violet-800 hover:bg-violet-100"><strong>Pricing &amp; zones →</strong><p className="mt-1 text-sm">Set the flat shipping fee for each city or zone. The company wallet setting below controls who receives shipping fees.</p></Link>
 
       {/* Dispatch Settings */}
       <div className="bg-white rounded-xl border border-gray-200 p-6">
@@ -194,7 +202,7 @@ export default function SettingsPage() {
           </div>
           <div>
             <h2 className="font-semibold text-gray-900">Company Wallet Owner</h2>
-            <p className="text-sm text-gray-500">The Peeap user whose wallet receives shipping fees from orders. Change this when transferring management.</p>
+            <p className="text-sm text-gray-500">Choose the company&apos;s Peeap receiving account, separately from staff login accounts. New paid orders require a verified active SLE wallet.</p>
           </div>
         </div>
         <div>
@@ -207,16 +215,14 @@ export default function SettingsPage() {
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono"
           />
           <p className="text-xs text-gray-400 mt-1">
-            This user&apos;s primary wallet will receive all shipping fees. Shipping staff salaries can be paid from this wallet.
+            The entire checkout shipping fee goes to this account&apos;s SLE primary wallet. The vendor&apos;s product commission is separate. Changing this affects new orders only.
           </p>
         </div>
-        {companyUserId && (
-          <div className="mt-3 p-3 bg-blue-50 rounded-lg">
-            <p className="text-sm text-blue-700">
-              Shipping fees from all orders will be credited to wallet of user <span className="font-mono text-xs">{companyUserId.slice(0, 8)}...{companyUserId.slice(-4)}</span>
-            </p>
-          </div>
-        )}
+        <div className={`mt-3 rounded-lg p-3 text-sm ${settlement?.verified && settlement.company_user_id === companyUserId.trim().toLowerCase() ? "bg-green-50 text-green-800" : "bg-amber-50 text-amber-900"}`}>
+          {settlement?.verified && settlement.company_user_id === companyUserId.trim().toLowerCase()
+            ? <>Receiving wallet verified (SLE): <span className="break-all font-mono text-xs">{settlement.wallet_id}</span>. This checks the destination, not whether historical orders have settled.</>
+            : <>{settlement?.error || "Save an explicit company account to verify its receiving wallet. No personal admin account is chosen automatically."}</>}
+        </div>
       </div>
     </div>
   );
